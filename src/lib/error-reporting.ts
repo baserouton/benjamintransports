@@ -1,0 +1,24 @@
+/**
+ * Centralized client-side error reporting.
+ * Swap the body for Sentry (or similar) when observability is wired up.
+ */
+export function reportRuntimeError(
+  error: unknown,
+  context: Record<string, unknown> = {},
+) {
+  if (typeof window === "undefined") return;
+
+  const message =
+    error instanceof Response
+      ? `Response ${error.status}${error.url ? ` at ${error.url}` : ""}`
+      : error instanceof Error
+        ? error.message
+        : String(error);
+
+  console.error("[runtime-error]", {
+    message,
+    stack: error instanceof Error ? error.stack : undefined,
+    route: window.location.pathname,
+    ...context,
+  });
+}

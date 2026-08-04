@@ -1,0 +1,174 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import type { JsonValue } from "@/domain/models";
+
+const currencySchema = z.enum(["SRD", "USD", "EUR"]);
+const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const optionalText = (max: number) => z.string().trim().max(max).optional();
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
+export const loginFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      login: z.string().trim().min(1).max(80),
+      password: z.string().min(8).max(200),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { loginHandler } = await import("./store.handlers.server");
+    return loginHandler(data);
+  });
+
+export const logoutFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { logoutHandler } = await import("./store.handlers.server");
+  return logoutHandler();
+});
+
+export const getCurrentUserFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { currentUserHandler } = await import("./store.handlers.server");
+  return currentUserHandler();
+});
+
+export const getStoreFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { storeHandler } = await import("./store.handlers.server");
+  return storeHandler();
+});
+
+export const createVehicleFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      modelo: z.string().trim().min(1).max(160),
+      placa: z.string().trim().min(1).max(32),
+      categoria: z.enum(["VANS", "CARROS", "PARTICULAR", "PICAPE"]),
+      fotos: z.array(z.string().max(1000)).max(20).default([]),
+      ano: z.number().int().min(1900).max(2200).optional(),
+      disponivel: z.boolean().default(true),
+      seguroValidade: dateSchema.optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { createVehicleHandler } = await import("./store.handlers.server");
+    return createVehicleHandler(data);
+  });
+
+export const createClientFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      nome: z.string().trim().min(1).max(180),
+      rg: z.string().trim().max(40),
+      cpf: z.string().trim().max(40),
+      endereco: z.string().trim().max(500),
+      whatsapp: z.string().trim().max(40),
+      email: z.string().trim().email().max(254).optional().or(z.literal("")),
+      cnhUrl: optionalText(1000),
+      suriname: z.boolean().optional(),
+      passaporteUrl: optionalText(1000),
+      identiteitskaartUrl: optionalText(1000),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { createClientHandler } = await import("./store.handlers.server");
+    return createClientHandler(data);
+  });
+
+export const createRentalFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      veiculoId: z.string().min(1).max(36),
+      clienteId: z.string().min(1).max(36),
+      dataRetirada: dateSchema,
+      dataSaida: dateSchema,
+      valorAluguel: z.number().nonnegative(),
+      moeda: currencySchema,
+      seguroValor: z.number().nonnegative().optional(),
+      seguroObs: optionalText(1000),
+      caucaoValor: z.number().nonnegative().optional(),
+      caucaoStatus: z.enum(["retido", "devolvido"]).optional(),
+      vistoriaRetirada: z
+        .object({
+          tanque: z.boolean(),
+          limpo: z.boolean(),
+          semAvarias: z.boolean(),
+          obs: z.string().max(2000),
+        })
+        .optional(),
+      vistoriaDevolucao: z
+        .object({
+          tanque: z.boolean(),
+          limpo: z.boolean(),
+          semAvarias: z.boolean(),
+          obs: z.string().max(2000),
+          taxa: z.number().nonnegative(),
+        })
+        .optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { createRentalHandler } = await import("./store.handlers.server");
+    return createRentalHandler(data);
+  });
+
+export const createMaintenanceFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      veiculoId: z.string().min(1).max(36),
+      tipo: z.enum(["preventiva", "corretiva"]),
+      pecas: z.string().trim().min(1).max(1000),
+      custo: z.number().nonnegative(),
+      moeda: currencySchema,
+      data: dateSchema,
+      obs: optionalText(2000),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { createMaintenanceHandler } = await import("./store.handlers.server");
+    return createMaintenanceHandler(data);
+  });
+
+export const deliverRentalFn = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string().min(1).max(36) }))
+  .handler(async ({ data }) => {
+    const { deliverRentalHandler } = await import("./store.handlers.server");
+    return deliverRentalHandler(data);
+  });
+
+export const returnRentalFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      id: z.string().min(1).max(36),
+      inspection: z.object({
+        tanque: z.boolean(),
+        limpo: z.boolean(),
+        semAvarias: z.boolean(),
+        obs: z.string().max(2000),
+        taxa: z.number().nonnegative(),
+      }),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { returnRentalHandler } = await import("./store.handlers.server");
+    return returnRentalHandler(data);
+  });
+
+export const createActivityLogFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      acao: z.string().trim().min(1).max(1000),
+      categoria: optionalText(80),
+      pagina: optionalText(500),
+      detalhes: z.record(z.string(), jsonValueSchema).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { activityLogHandler } = await import("./store.handlers.server");
+    return activityLogHandler(data);
+  });
