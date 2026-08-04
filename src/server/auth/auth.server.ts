@@ -39,9 +39,42 @@ function readCookie(name: string) {
   return null;
 }
 
+function shouldUseSecureCookie() {
+  if (process.env.COOKIE_SECURE === "true") return true;
+  if (process.env.COOKIE_SECURE === "false") return false;
+  // Em produção atrás de Cloudflare/Nginx com HTTPS, o cookie precisa de Secure.
+  return process.env.NODE_ENV === "production";
+}
+
 function sessionCookie(token: string, maxAge: number) {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure}`;
+  const secure = shouldUseSecureCookie() ? "; Secure" : "";
+  return `${COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`;
+}
+
+/** Origem pública vista pelo browser (não a URL interna do Node atrás do proxy). */
+function getPublicOrigin() {
+  const configured = process.env.APP_URL ?? process.env.ALLOWED_ORIGIN;
+  if (configured) {
+    try {
+      return new URL(configured).origin;
+    } catch {
+      // fallback abaixo
+    }
+  }
+
+  const request = getRequest();
+  const forwardedHost =
+    request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
+    request.headers.get("host")?.split(",")[0]?.trim();
+  const forwardedProto =
+    request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
+    (process.env.NODE_ENV === "production" ? "https" : "http");
+
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  return new URL(request.url).origin;
 }
 
 export async function issueSession(userId: string) {
@@ -120,7 +153,13 @@ function assertSameOrigin() {
   const request = getRequest();
   if (request.method === "GET" || request.method === "HEAD") return;
   const origin = request.headers.get("origin");
-  if (!origin || new URL(origin).origin !== new URL(request.url).origin) {
+  if (!origin) {
+    throw new Error("Origem da requisição inválida");
+  }
+  // Compara com a origem pública (APP_URL / X-Forwarded-*), não com
+  // request.url interno (http://127.0.0.1:3503), que quebra o login
+  // atrás de Nginx/Cloudflare.
+  if (new URL(origin).origin !== getPublicOrigin()) {
     throw new Error("Origem da requisição inválida");
   }
 }

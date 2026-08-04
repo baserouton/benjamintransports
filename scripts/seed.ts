@@ -13,8 +13,8 @@ import {
 } from "../src/server/db/schema";
 
 const adminPassword = process.env.SEED_ADMIN_PASSWORD;
-if (!adminPassword || adminPassword.length < 12) {
-  throw new Error("SEED_ADMIN_PASSWORD deve ter pelo menos 12 caracteres");
+if (!adminPassword || adminPassword.length < 8) {
+  throw new Error("SEED_ADMIN_PASSWORD deve ter pelo menos 8 caracteres");
 }
 
 const passwordHash = await hashPassword(adminPassword);
@@ -156,7 +156,9 @@ await db
       passwordHash,
     },
   ])
-  .onDuplicateKeyUpdate({ set: { ativo: true, updatedAt: new Date() } });
+  .onDuplicateKeyUpdate({
+    set: { ativo: true, passwordHash, updatedAt: new Date() },
+  });
 
 await db
   .insert(rentals)
