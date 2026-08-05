@@ -15,6 +15,13 @@
       "when": 1785880000000,
       "tag": "0001_vehicle_purchase_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1785950000000,
+      "tag": "0002_vehicle_soft_delete",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,9 @@ import {
   insertRental,
   insertVehicle,
   returnRental,
+  setVehicleHidden,
+  updateVehicle,
+  type VehicleUpdateInput,
 } from "@/server/repositories/store.repository.server";
 
 export async function loginHandler(data: { login: string; password: string }) {
@@ -59,14 +62,64 @@ export async function storeHandler() {
 
 export async function createVehicleHandler(data: Omit<Vehicle, "id">) {
   const session = await requireSession();
-  const id = await insertVehicle(data);
+  const id = await insertVehicle({ ...data, oculto: false });
   await insertActivityLog({
     usuario: session.login,
     acao: `Cadastrou veículo ${data.modelo} (${data.placa})`,
     categoria: "veiculo",
+    detalhes: { id, fotos: data.fotos.length },
+  });
+  return { id };
+}
+
+export async function updateVehicleHandler(data: { id: string } & VehicleUpdateInput) {
+  const session = await requireSession();
+  const { id, ...input } = data;
+  await updateVehicle(id, input);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Atualizou veículo ${input.modelo} (${input.placa})`,
+    categoria: "veiculo",
     detalhes: { id },
   });
   return { id };
+}
+
+export async function hideVehicleHandler(data: { id: string }) {
+  const session = await requireSession();
+  const vehicle = await setVehicleHidden(data.id, true);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Ocultou veículo ${vehicle.modelo} (${vehicle.placa}) — histórico preservado`,
+    categoria: "veiculo",
+    detalhes: { id: data.id, oculto: true },
+  });
+  return { id: data.id };
+}
+
+export async function restoreVehicleHandler(data: { id: string }) {
+  const session = await requireSession();
+  const vehicle = await setVehicleHidden(data.id, false);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Restaurou veículo ${vehicle.modelo} (${vehicle.placa}) na lista`,
+    categoria: "veiculo",
+    detalhes: { id: data.id, oculto: false },
+  });
+  return { id: data.id };
+}
+
+export async function uploadVehiclePhotosHandler(data: { images: string[] }) {
+  const session = await requireSession();
+  const { saveVehiclePhotoDataUrls } = await import("@/server/uploads/storage.server");
+  const urls = await saveVehiclePhotoDataUrls(data.images);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Enviou ${urls.length} foto(s) de veículo`,
+    categoria: "veiculo",
+    detalhes: { count: urls.length },
+  });
+  return { urls };
 }
 
 export async function createClientHandler(data: Omit<Client, "id">) {

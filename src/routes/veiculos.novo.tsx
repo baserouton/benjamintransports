@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
 import { notifyStoreChanged, type Category, type Currency } from "@/lib/data-store";
-import { createVehicleFn } from "@/server/functions/store.functions";
+import { createVehicleFn, uploadVehiclePhotosFn } from "@/server/functions/store.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, ArrowLeft } from "lucide-react";
+import { Upload, ArrowLeft, X } from "lucide-react";
 
 export const Route = createFileRoute("/veiculos/novo")({
   head: () => ({
@@ -30,6 +30,17 @@ export const Route = createFileRoute("/veiculos/novo")({
   component: NewVehicle,
 });
 
+type PhotoItem = { file: File; preview: string };
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Falha ao ler a imagem"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function NewVehicle() {
   const { t } = useI18n();
   const nav = useNavigate();
@@ -39,12 +50,29 @@ function NewVehicle() {
   const [ano, setAno] = useState<number | "">("");
   const [custoAquisicao, setCustoAquisicao] = useState<number | "">("");
   const [moedaAquisicao, setMoedaAquisicao] = useState<Currency>("SRD");
-  const [fotos, setFotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const onFiles = (files: FileList | null) => {
     if (!files) return;
-    const urls = Array.from(files).map((f) => URL.createObjectURL(f));
-    setFotos((prev) => [...prev, ...urls]);
+    const next = Array.from(files)
+      .filter((f) => f.type.startsWith("image/"))
+      .slice(0, Math.max(0, 10 - photos.length))
+      .map((file) => ({ file, preview: URL.createObjectURL(file) }));
+    if (next.length === 0) {
+      toast.error("Selecione imagens PNG, JPG ou WEBP (máx. 10).");
+      return;
+    }
+    setPhotos((prev) => [...prev, ...next].slice(0, 10));
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos((prev) => {
+      const copy = [...prev];
+      const [removed] = copy.splice(index, 1);
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return copy;
+    });
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -54,13 +82,21 @@ function NewVehicle() {
       toast.error("Informe o custo de aquisição do veículo.");
       return;
     }
+    setSaving(true);
     try {
+      let fotoUrls: string[] = [];
+      if (photos.length > 0) {
+        const images = await Promise.all(photos.map((p) => fileToDataUrl(p.file)));
+        const uploaded = await uploadVehiclePhotosFn({ data: { images } });
+        fotoUrls = uploaded.urls;
+      }
+
       await createVehicleFn({
         data: {
           modelo,
           placa,
           categoria,
-          fotos: [],
+          fotos: fotoUrls,
           ano: typeof ano === "number" ? ano : undefined,
           disponivel: true,
           custoAquisicao: Number(custoAquisicao),
@@ -70,8 +106,11 @@ function NewVehicle() {
       notifyStoreChanged();
       toast.success(t("saved"));
       nav({ to: "/veiculos" });
-    } catch {
-      toast.error("Não foi possível salvar o veículo");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Não foi possível salvar o veículo";
+      toast.error(message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -164,25 +203,37 @@ function NewVehicle() {
               <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-border p-6 cursor-pointer hover:bg-muted/40">
                 <Upload className="h-5 w-5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">
-                  {t("attachPhotos")} · PNG, JPG
+                  {t("attachPhotos")} · PNG, JPG, WEBP · máx. 5 MB cada · até 10 fotos
                 </span>
                 <input
                   type="file"
                   multiple
-                  accept="image/*"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
                   className="hidden"
-                  onChange={(e) => onFiles(e.target.files)}
+                  onChange={(e) => {
+                    onFiles(e.target.files);
+                    e.target.value = "";
+                  }}
                 />
               </label>
-              {fotos.length > 0 && (
+              {photos.length > 0 && (
                 <div className="grid grid-cols-4 gap-2 mt-2">
-                  {fotos.map((f, i) => (
-                    <img
-                      key={i}
-                      src={f}
-                      alt=""
-                      className="aspect-square object-cover rounded-md border border-border"
-                    />
+                  {photos.map((p, i) => (
+                    <div key={p.preview} className="relative group">
+                      <img
+                        src={p.preview}
+                        alt=""
+                        className="aspect-square object-cover rounded-md border border-border w-full"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(i)}
+                        className="absolute top-1 right-1 h-6 w-6 rounded-full bg-foreground text-background grid place-items-center opacity-90 hover:opacity-100"
+                        aria-label="Remover foto"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -192,7 +243,9 @@ function NewVehicle() {
               <Button type="button" variant="outline" onClick={() => nav({ to: "/veiculos" })}>
                 {t("cancel")}
               </Button>
-              <Button type="submit">{t("save")}</Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Salvando..." : t("save")}
+              </Button>
             </div>
           </form>
         </CardContent>

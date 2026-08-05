@@ -92,7 +92,7 @@ function NewRental() {
                     <SelectValue placeholder="Selecionar" />
                   </SelectTrigger>
                   <SelectContent>
-                    {s.vehicles.filter((v) => v.disponivel).map((v) => (
+                    {s.vehicles.filter((v) => v.disponivel && !v.oculto).map((v) => (
                       <SelectItem key={v.id} value={v.id}>
                         {v.modelo} — {v.placa}
                       </SelectItem>

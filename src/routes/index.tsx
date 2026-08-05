@@ -30,7 +30,7 @@ export const Route = createFileRoute("/")({
 function Dashboard() {
   const { t } = useI18n();
   const s = useStore();
-  const totalVehicles = s.vehicles.length;
+  const totalVehicles = s.vehicles.filter((v) => !v.oculto).length;
   const activeRentals = s.rentals.filter((r) => r.status !== "devolvido").length;
   const monthEntries = s.finance
     .filter((f) => f.tipo === "entrada")
@@ -143,8 +143,8 @@ function Dashboard() {
               + {t("rentals")}
             </Link>
             <Badge variant="outline" className="ml-auto self-center">
-              {s.vehicles.filter((v) => v.disponivel).length} {t("available")} ·{" "}
-              {s.vehicles.filter((v) => !v.disponivel).length} {t("rented")}
+              {s.vehicles.filter((v) => !v.oculto && v.disponivel).length} {t("available")} ·{" "}
+              {s.vehicles.filter((v) => !v.oculto && !v.disponivel).length} {t("rented")}
             </Badge>
           </CardContent>
         </Card>

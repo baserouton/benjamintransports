@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { config as loadDotenv } from "dotenv";
@@ -7,6 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(here, "..");
 const envPath = resolve(projectRoot, ".env");
 const entry = resolve(projectRoot, ".output/server/index.mjs");
+mkdirSync(resolve(projectRoot, "uploads/vehicles"), { recursive: true });
 
 if (existsSync(envPath)) {
   const result = loadDotenv({ path: envPath, override: false });

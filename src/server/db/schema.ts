@@ -26,6 +26,7 @@ export const vehicles = mysqlTable(
     fotos: json("fotos").$type<string[]>().notNull(),
     ano: int("ano"),
     disponivel: boolean("disponivel").notNull().default(true),
+    oculto: boolean("oculto").notNull().default(false),
     seguroValidade: date("seguro_validade", { mode: "string" }),
     custoAquisicao: money("custo_aquisicao"),
     moedaAquisicao: mysqlEnum("moeda_aquisicao", ["SRD", "USD", "EUR"]),
@@ -36,6 +37,7 @@ export const vehicles = mysqlTable(
     uniqueIndex("vehicles_placa_unique").on(table.placa),
     index("vehicles_categoria_idx").on(table.categoria),
     index("vehicles_disponivel_idx").on(table.disponivel),
+    index("vehicles_oculto_idx").on(table.oculto),
   ],
 );
 

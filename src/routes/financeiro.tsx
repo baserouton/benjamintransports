@@ -90,10 +90,11 @@ function Finance() {
     const now = new Date();
     const in30 = new Date();
     in30.setDate(now.getDate() + 30);
-    const expired = s.vehicles.filter(
+    const fleet = s.vehicles.filter((v) => !v.oculto);
+    const expired = fleet.filter(
       (v) => v.seguroValidade && new Date(v.seguroValidade) < now
     );
-    const upcoming = s.vehicles.filter(
+    const upcoming = fleet.filter(
       (v) => {
         if (!v.seguroValidade) return false;
         const d = new Date(v.seguroValidade);

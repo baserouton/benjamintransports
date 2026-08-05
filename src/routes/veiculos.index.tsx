@@ -46,22 +46,27 @@ function VehiclesList() {
   const [cat, setCat] = useState<Category | "TODOS">("TODOS");
   const [tab, setTab] = useState<StatusFilter>("all");
 
+  const visibleVehicles = useMemo(
+    () => s.vehicles.filter((v) => !v.oculto),
+    [s.vehicles],
+  );
+
   const stats = useMemo(() => {
-    const total = s.vehicles.length;
-    const available = s.vehicles.filter((v) => v.disponivel).length;
+    const total = visibleVehicles.length;
+    const available = visibleVehicles.filter((v) => v.disponivel).length;
     const rented = total - available;
     const now = new Date();
     const in30 = new Date();
     in30.setDate(now.getDate() + 30);
-    const expired = s.vehicles.filter((v) => v.seguroValidade && new Date(v.seguroValidade) < now).length;
-    const upcoming = s.vehicles.filter((v) => {
+    const expired = visibleVehicles.filter((v) => v.seguroValidade && new Date(v.seguroValidade) < now).length;
+    const upcoming = visibleVehicles.filter((v) => {
       if (!v.seguroValidade) return false;
       const d = new Date(v.seguroValidade);
       return d >= now && d <= in30;
     }).length;
     const occupancy = total > 0 ? Math.round((rented / total) * 100) : 0;
     return { total, available, rented, expired, upcoming, occupancy };
-  }, [s.vehicles]);
+  }, [visibleVehicles]);
 
   const categoryBreakdown = useMemo(() => {
     const rows: Array<{ cat: Category; total: number; rented: number }> = [
@@ -70,18 +75,18 @@ function VehiclesList() {
       { cat: "PARTICULAR", total: 0, rented: 0 },
       { cat: "PICAPE", total: 0, rented: 0 },
     ];
-    for (const v of s.vehicles) {
+    for (const v of visibleVehicles) {
       const r = rows.find((x) => x.cat === v.categoria);
       if (!r) continue;
       r.total += 1;
       if (!v.disponivel) r.rented += 1;
     }
     return rows;
-  }, [s.vehicles]);
+  }, [visibleVehicles]);
 
   const maxCat = Math.max(1, ...categoryBreakdown.map((r) => r.total));
 
-  const filtered = s.vehicles.filter((v) => {
+  const filtered = visibleVehicles.filter((v) => {
     if (cat !== "TODOS" && v.categoria !== cat) return false;
     if (tab === "available" && !v.disponivel) return false;
     if (tab === "rented" && v.disponivel) return false;

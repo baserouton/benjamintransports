@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
   ActivityLog,
   Client,
@@ -109,8 +109,61 @@ export async function findActiveUser(login: string) {
 
 export async function insertVehicle(input: Omit<Vehicle, "id">) {
   const id = randomUUID();
-  await db.insert(vehicles).values({ id, ...input, fotos: input.fotos ?? [] });
+  await db.insert(vehicles).values({
+    id,
+    ...input,
+    fotos: input.fotos ?? [],
+    oculto: input.oculto ?? false,
+  });
   return id;
+}
+
+export type VehicleUpdateInput = {
+  modelo: string;
+  placa: string;
+  categoria: Vehicle["categoria"];
+  ano?: number;
+  seguroValidade?: string;
+  custoAquisicao?: number;
+  moedaAquisicao?: Vehicle["moedaAquisicao"];
+  fotos?: string[];
+};
+
+export async function updateVehicle(id: string, input: VehicleUpdateInput) {
+  await db
+    .update(vehicles)
+    .set({
+      modelo: input.modelo,
+      placa: input.placa,
+      categoria: input.categoria,
+      ano: input.ano ?? null,
+      seguroValidade: input.seguroValidade ?? null,
+      custoAquisicao: input.custoAquisicao ?? null,
+      moedaAquisicao: input.moedaAquisicao ?? null,
+      ...(input.fotos ? { fotos: input.fotos } : {}),
+    })
+    .where(eq(vehicles.id, id));
+}
+
+export async function setVehicleHidden(id: string, oculto: boolean) {
+  const [vehicle] = await db.select().from(vehicles).where(eq(vehicles.id, id)).limit(1);
+  if (!vehicle) throw new Error("Veículo não encontrado");
+
+  if (oculto) {
+    const [active] = await db
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(and(eq(rentals.veiculoId, id), inArray(rentals.status, ["pendente", "entregue"])))
+      .limit(1);
+    if (active) {
+      throw new Error(
+        "Não é possível ocultar: existe locação pendente ou em andamento. Finalize a locação antes.",
+      );
+    }
+  }
+
+  await db.update(vehicles).set({ oculto }).where(eq(vehicles.id, id));
+  return vehicle;
 }
 
 export async function insertClient(input: Omit<Client, "id">) {

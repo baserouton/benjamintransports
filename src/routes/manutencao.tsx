@@ -273,7 +273,9 @@ function MaintenancePage() {
                       <SelectValue placeholder={lang === "pt" ? "Selecionar" : "Selecteren"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {s.vehicles.map((v) => (
+                      {s.vehicles
+                        .filter((v) => !v.oculto)
+                        .map((v) => (
                         <SelectItem key={v.id} value={v.id}>
                           {v.modelo} — {v.placa}
                         </SelectItem>

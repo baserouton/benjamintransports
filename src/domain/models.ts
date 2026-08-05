@@ -13,6 +13,8 @@ export interface Vehicle {
   fotos: string[];
   ano?: number;
   disponivel: boolean;
+  /** Soft-delete: some da lista de veículos, mas mantém histórico. */
+  oculto: boolean;
   seguroValidade?: string;
   /** Valor pago na compra do veículo (base do payback). */
   custoAquisicao?: number;

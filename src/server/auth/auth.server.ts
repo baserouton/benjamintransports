@@ -149,6 +149,10 @@ export async function readSession() {
   return session ?? null;
 }
 
+function isLocalHostname(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
 function assertSameOrigin() {
   const request = getRequest();
   if (request.method === "GET" || request.method === "HEAD") return;
@@ -156,12 +160,21 @@ function assertSameOrigin() {
   if (!origin) {
     throw new Error("Origem da requisição inválida");
   }
-  // Compara com a origem pública (APP_URL / X-Forwarded-*), não com
-  // request.url interno (http://127.0.0.1:3503), que quebra o login
-  // atrás de Nginx/Cloudflare.
-  if (new URL(origin).origin !== getPublicOrigin()) {
-    throw new Error("Origem da requisição inválida");
+  const originUrl = new URL(origin);
+  const publicOrigin = getPublicOrigin();
+  const requestOrigin = new URL(request.url).origin;
+
+  // Aceita origem pública (produção atrás de proxy) ou a origem real da request.
+  if (originUrl.origin === publicOrigin || originUrl.origin === requestOrigin) {
+    return;
   }
+
+  // Desenvolvimento local: permite localhost mesmo com APP_URL de produção no .env.
+  if (isLocalHostname(originUrl.hostname) && isLocalHostname(new URL(request.url).hostname)) {
+    return;
+  }
+
+  throw new Error("Origem da requisição inválida");
 }
 
 export const authMiddleware = createMiddleware({ type: "function" }).server(async ({ next }) => {
