@@ -53,6 +53,8 @@ export const createVehicleFn = createServerFn({ method: "POST" })
       ano: z.number().int().min(1900).max(2200).optional(),
       disponivel: z.boolean().default(true),
       seguroValidade: dateSchema.optional(),
+      custoAquisicao: z.number().positive(),
+      moedaAquisicao: z.enum(["SRD", "USD", "EUR"]),
     }),
   )
   .handler(async ({ data }) => {

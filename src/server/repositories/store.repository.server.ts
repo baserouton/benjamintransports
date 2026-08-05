@@ -51,6 +51,8 @@ export async function findStore(): Promise<Store> {
       ...row,
       ano: row.ano ?? undefined,
       seguroValidade: row.seguroValidade ?? undefined,
+      custoAquisicao: row.custoAquisicao ?? undefined,
+      moedaAquisicao: row.moedaAquisicao ?? undefined,
     })),
     clients: clientRows.map(({ createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({
       ...row,

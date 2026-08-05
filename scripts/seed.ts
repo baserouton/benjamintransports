@@ -31,6 +31,8 @@ await db
       ano: 2022,
       disponivel: false,
       seguroValidade: "2026-11-15",
+      custoAquisicao: 185000,
+      moedaAquisicao: "SRD",
     },
     {
       id: "v2",
@@ -41,6 +43,8 @@ await db
       ano: 2021,
       disponivel: true,
       seguroValidade: "2026-08-01",
+      custoAquisicao: 220000,
+      moedaAquisicao: "SRD",
     },
     {
       id: "v3",
@@ -51,6 +55,8 @@ await db
       ano: 2023,
       disponivel: true,
       seguroValidade: "2027-01-10",
+      custoAquisicao: 95000,
+      moedaAquisicao: "SRD",
     },
     {
       id: "v4",
@@ -61,6 +67,8 @@ await db
       ano: 2020,
       disponivel: false,
       seguroValidade: "2026-09-20",
+      custoAquisicao: 160000,
+      moedaAquisicao: "SRD",
     },
     {
       id: "v5",
@@ -71,6 +79,8 @@ await db
       ano: 2019,
       disponivel: true,
       seguroValidade: "2026-12-05",
+      custoAquisicao: 45000,
+      moedaAquisicao: "SRD",
     },
     {
       id: "v6",
@@ -81,9 +91,17 @@ await db
       ano: 2022,
       disponivel: true,
       seguroValidade: "2027-03-10",
+      custoAquisicao: 175000,
+      moedaAquisicao: "SRD",
     },
   ])
-  .onDuplicateKeyUpdate({ set: { updatedAt: new Date() } });
+  .onDuplicateKeyUpdate({
+    set: {
+      custoAquisicao: sql`VALUES(custo_aquisicao)`,
+      moedaAquisicao: sql`VALUES(moeda_aquisicao)`,
+      updatedAt: new Date(),
+    },
+  });
 
 await db
   .insert(clients)

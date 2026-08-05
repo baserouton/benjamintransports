@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
-import { notifyStoreChanged, type Category } from "@/lib/data-store";
+import { notifyStoreChanged, type Category, type Currency } from "@/lib/data-store";
 import { createVehicleFn } from "@/server/functions/store.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,8 @@ function NewVehicle() {
   const [placa, setPlaca] = useState("");
   const [categoria, setCategoria] = useState<Category>("CARROS");
   const [ano, setAno] = useState<number | "">("");
+  const [custoAquisicao, setCustoAquisicao] = useState<number | "">("");
+  const [moedaAquisicao, setMoedaAquisicao] = useState<Currency>("SRD");
   const [fotos, setFotos] = useState<string[]>([]);
 
   const onFiles = (files: FileList | null) => {
@@ -48,15 +50,21 @@ function NewVehicle() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modelo || !placa) return;
+    if (custoAquisicao === "" || Number(custoAquisicao) <= 0) {
+      toast.error("Informe o custo de aquisição do veículo.");
+      return;
+    }
     try {
       await createVehicleFn({
         data: {
-        modelo,
-        placa,
-        categoria,
+          modelo,
+          placa,
+          categoria,
           fotos: [],
-        ano: typeof ano === "number" ? ano : undefined,
-        disponivel: true,
+          ano: typeof ano === "number" ? ano : undefined,
+          disponivel: true,
+          custoAquisicao: Number(custoAquisicao),
+          moedaAquisicao,
         },
       });
       notifyStoreChanged();
@@ -115,6 +123,39 @@ function NewVehicle() {
                   value={ano}
                   onChange={(e) => setAno(e.target.value ? Number(e.target.value) : "")}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("purchaseCost")}</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={custoAquisicao}
+                  onChange={(e) =>
+                    setCustoAquisicao(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  placeholder="Ex.: 85000"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Valor pago na compra. Serve para acompanhar o payback com os aluguéis.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("currency")}</Label>
+                <Select
+                  value={moedaAquisicao}
+                  onValueChange={(v) => setMoedaAquisicao(v as Currency)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SRD">SRD</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

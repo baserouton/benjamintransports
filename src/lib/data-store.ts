@@ -19,8 +19,9 @@ export type {
   Store,
   UserAccount,
   Vehicle,
+  VehiclePayback,
 } from "@/domain/models";
-export { fmtMoney } from "@/domain/models";
+export { calcVehiclePayback, fmtMoney } from "@/domain/models";
 
 export const STORE_QUERY_KEY = ["store"] as const;
 const STORE_CHANGE_EVENT = "locadora-store-change";

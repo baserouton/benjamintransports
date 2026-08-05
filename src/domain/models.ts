@@ -14,6 +14,9 @@ export interface Vehicle {
   ano?: number;
   disponivel: boolean;
   seguroValidade?: string;
+  /** Valor pago na compra do veículo (base do payback). */
+  custoAquisicao?: number;
+  moedaAquisicao?: Currency;
 }
 
 export interface Client {
@@ -77,6 +80,42 @@ export interface FinanceEntry {
   moeda: Currency;
   tipo: "entrada" | "despesa";
   veiculoId?: string;
+}
+
+export interface VehiclePayback {
+  currency: Currency;
+  cost: number;
+  rented: number;
+  expenses: number;
+  remaining: number;
+  pct: number;
+  achieved: boolean;
+}
+
+/** Payback = o quanto já foi alugado (entradas) vs o custo de aquisição, na mesma moeda. */
+export function calcVehiclePayback(
+  vehicle: Pick<Vehicle, "id" | "custoAquisicao" | "moedaAquisicao">,
+  finance: FinanceEntry[],
+): VehiclePayback | null {
+  const cost = vehicle.custoAquisicao;
+  if (cost == null || cost <= 0) return null;
+  const currency = vehicle.moedaAquisicao ?? "SRD";
+  let rented = 0;
+  let expenses = 0;
+  for (const entry of finance) {
+    if (entry.veiculoId !== vehicle.id || entry.moeda !== currency) continue;
+    if (entry.tipo === "entrada") rented += entry.valor;
+    else expenses += entry.valor;
+  }
+  return {
+    currency,
+    cost,
+    rented,
+    expenses,
+    remaining: Math.max(0, cost - rented),
+    pct: (rented / cost) * 100,
+    achieved: rented >= cost,
+  };
 }
 
 export interface UserAccount {

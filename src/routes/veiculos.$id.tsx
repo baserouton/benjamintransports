@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
-import { useStore, fmtMoney } from "@/lib/data-store";
+import { useStore, fmtMoney, calcVehiclePayback } from "@/lib/data-store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Car, Wrench, Wallet } from "lucide-react";
+import { ArrowLeft, Car, Wrench, Wallet, Target } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -50,6 +50,8 @@ function VehicleDetail() {
   const maint = s.maintenance.filter((m) => m.veiculoId === v.id);
   const fin = s.finance.filter((f) => f.veiculoId === v.id);
   const rentals = s.rentals.filter((r) => r.veiculoId === v.id);
+  const payback = calcVehiclePayback(v, s.finance);
+  const paybackPct = payback ? Math.min(100, payback.pct) : 0;
 
   return (
     <div>
@@ -62,6 +64,71 @@ function VehicleDetail() {
           </Button>
         }
       />
+
+      {payback && (
+        <Card className={`p-5 mb-4 ${payback.achieved ? "bg-foreground text-background border-foreground" : ""}`}>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+            <div className="flex items-start gap-3">
+              <div
+                className={`h-10 w-10 rounded-md grid place-items-center shrink-0 ${
+                  payback.achieved ? "bg-background text-foreground" : "bg-muted text-muted-foreground"
+                }`}
+              >
+                <Target className="h-5 w-5" />
+              </div>
+              <div>
+                <div
+                  className={`text-[11px] uppercase tracking-widest ${
+                    payback.achieved ? "opacity-70" : "text-muted-foreground"
+                  }`}
+                >
+                  {t("payback")}
+                </div>
+                <div className="text-2xl font-semibold tracking-tight mt-1">
+                  {payback.achieved ? t("paybackAchieved") : `${payback.pct.toFixed(1)}%`}
+                </div>
+                <div className={`text-xs mt-1 ${payback.achieved ? "opacity-70" : "text-muted-foreground"}`}>
+                  {payback.achieved
+                    ? `${fmtMoney(payback.rented, payback.currency)} alugados · custo ${fmtMoney(payback.cost, payback.currency)}`
+                    : `${t("paybackPending")}: ${fmtMoney(payback.remaining, payback.currency)}`}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 md:gap-8">
+              <div>
+                <div className={`text-[10px] uppercase tracking-widest ${payback.achieved ? "opacity-60" : "text-muted-foreground"}`}>
+                  {t("purchaseCost")}
+                </div>
+                <div className="text-sm font-medium tabular-nums mt-1">
+                  {fmtMoney(payback.cost, payback.currency)}
+                </div>
+              </div>
+              <div>
+                <div className={`text-[10px] uppercase tracking-widest ${payback.achieved ? "opacity-60" : "text-muted-foreground"}`}>
+                  {t("alreadyRented")}
+                </div>
+                <div className="text-sm font-medium tabular-nums mt-1">
+                  {fmtMoney(payback.rented, payback.currency)}
+                </div>
+              </div>
+              <div>
+                <div className={`text-[10px] uppercase tracking-widest ${payback.achieved ? "opacity-60" : "text-muted-foreground"}`}>
+                  {t("expenses")}
+                </div>
+                <div className="text-sm font-medium tabular-nums mt-1">
+                  {fmtMoney(payback.expenses, payback.currency)}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className={`h-1.5 rounded-full overflow-hidden ${payback.achieved ? "bg-background/15" : "bg-muted"}`}>
+            <div
+              className={`h-full ${payback.achieved ? "bg-background" : "bg-foreground"}`}
+              style={{ width: `${paybackPct}%` }}
+            />
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3 mb-4">
         <Card className="lg:col-span-2">
@@ -91,6 +158,14 @@ function VehicleDetail() {
             <Row k={t("plate")} v={<span className="font-mono">{v.placa}</span>} />
             <Row k={t("category")} v={<Badge variant="outline">{v.categoria}</Badge>} />
             <Row k="Ano" v={v.ano ?? "—"} />
+            <Row
+              k={t("purchaseCost")}
+              v={
+                v.custoAquisicao != null && v.moedaAquisicao
+                  ? fmtMoney(v.custoAquisicao, v.moedaAquisicao)
+                  : "—"
+              }
+            />
             <Row
               k={t("status")}
               v={v.disponivel ? <Badge variant="secondary">{t("available")}</Badge> : <Badge>{t("rented")}</Badge>}

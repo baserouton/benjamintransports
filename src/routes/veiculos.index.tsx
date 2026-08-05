@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Plus, Search, Car, ShieldAlert, ShieldCheck, TrendingUp } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
-import { useStore, type Category } from "@/lib/data-store";
+import { useStore, calcVehiclePayback, fmtMoney, type Category } from "@/lib/data-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -254,13 +254,14 @@ function VehiclesList() {
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("category")}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("status")}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{lang === "pt" ? "Seguro" : "Verzekering"}</TableHead>
+                <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("payback")}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">{t("view")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
                     {t("noRecords")}
                   </TableCell>
                 </TableRow>
@@ -269,6 +270,7 @@ function VehiclesList() {
                 const now = new Date();
                 const validity = v.seguroValidade ? new Date(v.seguroValidade) : null;
                 const expired = validity ? validity < now : false;
+                const payback = calcVehiclePayback(v, s.finance);
                 return (
                   <TableRow key={v.id}>
                     <TableCell className="font-medium">
@@ -302,6 +304,28 @@ function VehiclesList() {
                           {v.seguroValidade}
                           {expired && <span className="ml-1 text-[10px] uppercase tracking-wider">· {lang === "pt" ? "vencido" : "verlopen"}</span>}
                         </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs min-w-[140px]">
+                      {payback ? (
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between gap-2 font-semibold tabular-nums">
+                            <span>{Math.min(999, payback.pct).toFixed(0)}%</span>
+                            <span className="text-muted-foreground font-normal">
+                              {payback.achieved
+                                ? t("paybackAchieved")
+                                : fmtMoney(payback.remaining, payback.currency)}
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-1.5 bg-foreground rounded-full"
+                              style={{ width: `${Math.min(100, payback.pct)}%` }}
+                            />
+                          </div>
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

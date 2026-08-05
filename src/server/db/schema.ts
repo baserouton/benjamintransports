@@ -27,6 +27,8 @@ export const vehicles = mysqlTable(
     ano: int("ano"),
     disponivel: boolean("disponivel").notNull().default(true),
     seguroValidade: date("seguro_validade", { mode: "string" }),
+    custoAquisicao: money("custo_aquisicao"),
+    moedaAquisicao: mysqlEnum("moeda_aquisicao", ["SRD", "USD", "EUR"]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },

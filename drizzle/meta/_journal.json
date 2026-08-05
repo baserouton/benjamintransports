@@ -8,6 +8,13 @@
       "when": 1785208737304,
       "tag": "0000_common_gressill",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1785880000000,
+      "tag": "0001_vehicle_purchase_cost",
+      "breakpoints": true
     }
   ]
 }
