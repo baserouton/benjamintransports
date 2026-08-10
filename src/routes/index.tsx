@@ -35,7 +35,9 @@ function Dashboard() {
   const monthEntries = s.finance
     .filter((f) => f.tipo === "entrada")
     .reduce((sum, f) => sum + f.valor, 0);
-  const pendingDocs = 2; // Contrato + Logo
+  const pendingDocs = s.clients.filter(
+    (c) => !c.cnhUrl || (c.suriname && (!c.passaporteUrl || !c.identiteitskaartUrl)),
+  ).length;
 
   const revenueByVehicle = s.vehicles.map((v) => ({
     name: v.placa,
