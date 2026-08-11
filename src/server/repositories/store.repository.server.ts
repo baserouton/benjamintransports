@@ -1,16 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type {
-  ActivityLog,
-  Client,
-  FinanceCategory,
-  FinanceEntry,
-  InspectionIn,
-  Maintenance,
-  Rental,
-  Store,
-  Vehicle,
-  VehicleCategory,
+import {
+  TRANSFER_SERVICE_TYPE_LABELS,
+  type ActivityLog,
+  type Client,
+  type FinanceCategory,
+  type FinanceEntry,
+  type InspectionIn,
+  type Maintenance,
+  type Rental,
+  type Store,
+  type TransferService,
+  type Vehicle,
+  type VehicleCategory,
 } from "@/domain/models";
 import { db } from "@/server/db/client.server";
 import {
@@ -19,6 +21,7 @@ import {
   financeEntries,
   maintenance,
   rentals,
+  transferServices,
   users,
   vehicleCategories,
   vehicles,
@@ -35,6 +38,7 @@ export async function findStore(): Promise<Store> {
     categoryRows,
     clientRows,
     rentalRows,
+    transferRows,
     maintenanceRows,
     financeRows,
     userRows,
@@ -44,6 +48,7 @@ export async function findStore(): Promise<Store> {
       db.select().from(vehicleCategories).orderBy(vehicleCategories.nome),
       db.select().from(clients).orderBy(clients.nome),
       db.select().from(rentals).orderBy(desc(rentals.dataRetirada)),
+      db.select().from(transferServices).orderBy(desc(transferServices.data)),
       db.select().from(maintenance).orderBy(desc(maintenance.data)),
       db.select().from(financeEntries).orderBy(desc(financeEntries.data)),
       db
@@ -86,6 +91,11 @@ export async function findStore(): Promise<Store> {
       caucaoStatus: row.caucaoStatus ?? undefined,
       vistoriaRetirada: row.vistoriaRetirada ?? undefined,
       vistoriaDevolucao: row.vistoriaDevolucao ?? undefined,
+    })),
+    transferServices: transferRows.map(({ createdAt: _c, ...row }) => ({
+      ...row,
+      clienteNome: row.clienteNome ?? undefined,
+      obs: row.obs ?? undefined,
     })),
     maintenance: maintenanceRows.map(
       ({ createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({
@@ -440,6 +450,54 @@ export async function returnRental(id: string, inspection: InspectionIn) {
       });
     }
   });
+}
+
+export async function insertTransferService(input: Omit<TransferService, "id">) {
+  const id = randomUUID();
+  const [vehicle] = await db
+    .select({
+      id: vehicles.id,
+      modelo: vehicles.modelo,
+      placa: vehicles.placa,
+      disponivel: vehicles.disponivel,
+      oculto: vehicles.oculto,
+    })
+    .from(vehicles)
+    .where(eq(vehicles.id, input.veiculoId))
+    .limit(1);
+  if (!vehicle) throw new Error("Veículo não encontrado");
+  if (vehicle.oculto) throw new Error("Veículo oculto não pode ser usado no Translato");
+  if (!vehicle.disponivel) {
+    throw new Error("Só é possível usar veículos disponíveis (não alugados)");
+  }
+
+  const tipoLabel = TRANSFER_SERVICE_TYPE_LABELS[input.tipoServico] ?? input.tipoServico;
+
+  await db.transaction(async (tx) => {
+    await tx.insert(transferServices).values({
+      id,
+      veiculoId: input.veiculoId,
+      tipoServico: input.tipoServico,
+      destino: input.destino.trim(),
+      data: input.data,
+      valor: input.valor,
+      moeda: input.moeda,
+      clienteNome: input.clienteNome?.trim() || null,
+      obs: input.obs?.trim() || null,
+    });
+    await tx.insert(financeEntries).values({
+      id: randomUUID(),
+      data: input.data,
+      descricao: `Serviço avulso — ${tipoLabel} → ${input.destino.trim()} — ${vehicle.placa}`,
+      valor: input.valor,
+      moeda: input.moeda,
+      tipo: "entrada",
+      categoria: "translato",
+      manual: false,
+      veiculoId: input.veiculoId,
+    });
+  });
+  return id;
 }
 
 export async function insertFinanceEntry(

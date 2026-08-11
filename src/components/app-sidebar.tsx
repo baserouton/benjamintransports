@@ -10,6 +10,8 @@ import {
   FileText,
   History,
   Settings,
+  ChevronRight,
+  Plane,
 } from "lucide-react";
 import {
   Sidebar,
@@ -21,8 +23,12 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useI18n } from "@/lib/i18n";
 
 export function AppSidebar() {
@@ -33,7 +39,6 @@ export function AppSidebar() {
     { title: t("dashboard"), url: "/", icon: LayoutDashboard },
     { title: t("vehicles"), url: "/veiculos", icon: Car },
     { title: t("clients"), url: "/clientes", icon: Users },
-    { title: t("rentals"), url: "/locacoes", icon: ClipboardList },
     { title: t("maintenance"), url: "/manutencao", icon: Wrench },
     { title: t("finance"), url: "/financeiro", icon: Wallet },
   ];
@@ -46,6 +51,11 @@ export function AppSidebar() {
 
   const isActive = (url: string) =>
     url === "/" ? pathname === "/" : pathname === url || pathname.startsWith(url + "/");
+
+  const rentalsOpen =
+    pathname === "/locacoes" ||
+    pathname.startsWith("/locacoes/") ||
+    pathname.startsWith("/locacoes");
 
   return (
     <Sidebar collapsible="icon">
@@ -67,7 +77,64 @@ export function AppSidebar() {
           <SidebarGroupLabel>{t("overview")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {main.map((i) => (
+              {main.slice(0, 3).map((i) => (
+                <SidebarMenuItem key={i.url}>
+                  <SidebarMenuButton asChild isActive={isActive(i.url)} tooltip={i.title}>
+                    <Link to={i.url} className="flex items-center gap-2">
+                      <i.icon className="h-4 w-4" />
+                      <span>{i.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+
+              <Collapsible asChild defaultOpen={rentalsOpen} className="group/collapsible">
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      tooltip={t("rentals")}
+                      isActive={rentalsOpen}
+                      className="cursor-pointer"
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                      <span>{t("rentals")}</span>
+                      <ChevronRight className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={
+                            pathname === "/locacoes" ||
+                            (pathname.startsWith("/locacoes/") &&
+                              !pathname.startsWith("/locacoes/translato"))
+                          }
+                        >
+                          <Link to="/locacoes">
+                            <ClipboardList className="h-3.5 w-3.5" />
+                            <span>{t("rentals")}</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname.startsWith("/locacoes/translato")}
+                        >
+                          <Link to="/locacoes/translato">
+                            <Plane className="h-3.5 w-3.5" />
+                            <span>Translato</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
+
+              {main.slice(3).map((i) => (
                 <SidebarMenuItem key={i.url}>
                   <SidebarMenuButton asChild isActive={isActive(i.url)} tooltip={i.title}>
                     <Link to={i.url} className="flex items-center gap-2">

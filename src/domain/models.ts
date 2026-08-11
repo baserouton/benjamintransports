@@ -174,6 +174,7 @@ export type FinanceCategory =
   | "aquisicao"
   | "seguro"
   | "vistoria"
+  | "translato"
   | "operacional"
   | "outro";
 
@@ -184,6 +185,7 @@ export const FINANCE_CATEGORIES: FinanceCategory[] = [
   "aquisicao",
   "seguro",
   "vistoria",
+  "translato",
   "operacional",
   "outro",
 ];
@@ -195,9 +197,43 @@ export const FINANCE_CATEGORY_LABELS: Record<FinanceCategory, string> = {
   aquisicao: "Aquisição de veículo",
   seguro: "Seguro",
   vistoria: "Vistoria",
+  translato: "Serviço avulso",
   operacional: "Operacional",
   outro: "Outro",
 };
+
+/** Tipos de serviço avulso (Translato). */
+export type TransferServiceType =
+  | "aeroporto_hotel"
+  | "hotel_aeroporto"
+  | "ponto_a_ponto"
+  | "outro";
+
+export const TRANSFER_SERVICE_TYPES: TransferServiceType[] = [
+  "aeroporto_hotel",
+  "hotel_aeroporto",
+  "ponto_a_ponto",
+  "outro",
+];
+
+export const TRANSFER_SERVICE_TYPE_LABELS: Record<TransferServiceType, string> = {
+  aeroporto_hotel: "Aeroporto → Hotel / destino",
+  hotel_aeroporto: "Hotel / origem → Aeroporto",
+  ponto_a_ponto: "Ponto a ponto",
+  outro: "Outro",
+};
+
+export interface TransferService {
+  id: string;
+  veiculoId: string;
+  tipoServico: TransferServiceType;
+  destino: string;
+  data: string;
+  valor: number;
+  moeda: Currency;
+  clienteNome?: string;
+  obs?: string;
+}
 
 export interface FinanceEntry {
   id: string;
@@ -274,6 +310,7 @@ export interface Store {
   vehicleCategories: VehicleCategory[];
   clients: Client[];
   rentals: Rental[];
+  transferServices: TransferService[];
   maintenance: Maintenance[];
   finance: FinanceEntry[];
   users: UserAccount[];
@@ -285,6 +322,7 @@ export const emptyStore: Store = {
   vehicleCategories: [],
   clients: [],
   rentals: [],
+  transferServices: [],
   maintenance: [],
   finance: [],
   users: [],

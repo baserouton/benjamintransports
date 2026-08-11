@@ -11,7 +11,12 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
-import type { InspectionIn, InspectionOut, JsonValue } from "@/domain/models";
+import type {
+  InspectionIn,
+  InspectionOut,
+  JsonValue,
+  TransferServiceType,
+} from "@/domain/models";
 
 const id = () => varchar("id", { length: 36 });
 const money = (name: string) => decimal(name, { precision: 14, scale: 2, mode: "number" });
@@ -159,6 +164,30 @@ export const financeEntries = mysqlTable(
     index("finance_tipo_idx").on(table.tipo),
     index("finance_categoria_idx").on(table.categoria),
     index("finance_veiculo_idx").on(table.veiculoId),
+  ],
+);
+
+/** Serviço avulso (Translato): aeroporto, transfer, etc. */
+export const transferServices = mysqlTable(
+  "transfer_services",
+  {
+    id: id().primaryKey(),
+    veiculoId: varchar("veiculo_id", { length: 36 })
+      .notNull()
+      .references(() => vehicles.id, { onDelete: "restrict", onUpdate: "cascade" }),
+    tipoServico: varchar("tipo_servico", { length: 40 }).$type<TransferServiceType>().notNull(),
+    destino: varchar("destino", { length: 300 }).notNull(),
+    data: date("data", { mode: "string" }).notNull(),
+    valor: money("valor").notNull(),
+    moeda: mysqlEnum("moeda", ["SRD", "USD", "EUR"]).notNull(),
+    clienteNome: varchar("cliente_nome", { length: 180 }),
+    obs: varchar("obs", { length: 2000 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("transfer_services_veiculo_idx").on(table.veiculoId),
+    index("transfer_services_data_idx").on(table.data),
+    index("transfer_services_tipo_idx").on(table.tipoServico),
   ],
 );
 

@@ -4,6 +4,7 @@ import type {
   InspectionIn,
   Maintenance,
   Rental,
+  TransferService,
   Vehicle,
 } from "@/domain/models";
 import {
@@ -21,6 +22,7 @@ import {
   insertFinanceEntry,
   insertMaintenance,
   insertRental,
+  insertTransferService,
   insertVehicle,
   returnRental,
   assertVehicleCategoryExists,
@@ -216,6 +218,18 @@ export async function returnRentalHandler(data: { id: string; inspection: Inspec
     categoria: "locacao",
   });
   return { ok: true };
+}
+
+export async function createTransferServiceHandler(data: Omit<TransferService, "id">) {
+  const session = await requireSession();
+  const id = await insertTransferService(data);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Registrou Translato (${data.tipoServico}) para ${data.destino}`,
+    categoria: "translato",
+    detalhes: { id, veiculoId: data.veiculoId, valor: data.valor, moeda: data.moeda },
+  });
+  return { id };
 }
 
 export async function createFinanceEntryHandler(

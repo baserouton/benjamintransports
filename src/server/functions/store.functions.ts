@@ -276,6 +276,29 @@ export const returnRentalFn = createServerFn({ method: "POST" })
     return returnRentalHandler(data);
   });
 
+export const createTransferServiceFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      veiculoId: z.string().min(1).max(36),
+      tipoServico: z.enum([
+        "aeroporto_hotel",
+        "hotel_aeroporto",
+        "ponto_a_ponto",
+        "outro",
+      ]),
+      destino: z.string().trim().min(1).max(300),
+      data: dateSchema,
+      valor: z.number().positive(),
+      moeda: currencySchema,
+      clienteNome: optionalText(180),
+      obs: optionalText(2000),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { createTransferServiceHandler } = await import("./store.handlers.server");
+    return createTransferServiceHandler(data);
+  });
+
 export const createFinanceEntryFn = createServerFn({ method: "POST" })
   .validator(
     z.object({
@@ -291,6 +314,7 @@ export const createFinanceEntryFn = createServerFn({ method: "POST" })
         "aquisicao",
         "seguro",
         "vistoria",
+        "translato",
         "operacional",
         "outro",
       ]),

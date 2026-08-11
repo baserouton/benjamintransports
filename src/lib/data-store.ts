@@ -18,6 +18,8 @@ export type {
   Rental,
   RentalStatus,
   Store,
+  TransferService,
+  TransferServiceType,
   UserAccount,
   Vehicle,
   VehicleCategory,
@@ -27,6 +29,8 @@ export type {
 export {
   FINANCE_CATEGORIES,
   FINANCE_CATEGORY_LABELS,
+  TRANSFER_SERVICE_TYPES,
+  TRANSFER_SERVICE_TYPE_LABELS,
   calcVehiclePayback,
   fmtMoney,
   getComplianceExpiry,

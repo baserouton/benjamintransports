@@ -21,6 +21,7 @@ import { Route as ClientesNovoRouteImport } from './routes/clientes.novo'
 import { Route as LocacoesIndexRouteImport } from './routes/locacoes.index'
 import { Route as LocacoesIdRouteImport } from './routes/locacoes.$id'
 import { Route as LocacoesNovoRouteImport } from './routes/locacoes.novo'
+import { Route as LocacoesTranslatoRouteImport } from './routes/locacoes.translato'
 import { Route as LogsIndexRouteImport } from './routes/logs.index'
 import { Route as LogsIdRouteImport } from './routes/logs.$id'
 import { Route as VeiculosIndexRouteImport } from './routes/veiculos.index'
@@ -87,6 +88,11 @@ const LocacoesNovoRoute = LocacoesNovoRouteImport.update({
   path: '/locacoes/novo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LocacoesTranslatoRoute = LocacoesTranslatoRouteImport.update({
+  id: '/locacoes/translato',
+  path: '/locacoes/translato',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LogsIndexRoute = LogsIndexRouteImport.update({
   id: '/logs/',
   path: '/logs/',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/clientes/novo': typeof ClientesNovoRoute
   '/locacoes/$id': typeof LocacoesIdRoute
   '/locacoes/novo': typeof LocacoesNovoRoute
+  '/locacoes/translato': typeof LocacoesTranslatoRoute
   '/logs/$id': typeof LogsIdRoute
   '/veiculos/$id': typeof VeiculosIdRoute
   '/veiculos/novo': typeof VeiculosNovoRoute
@@ -143,6 +150,7 @@ export interface FileRoutesByTo {
   '/clientes/novo': typeof ClientesNovoRoute
   '/locacoes/$id': typeof LocacoesIdRoute
   '/locacoes/novo': typeof LocacoesNovoRoute
+  '/locacoes/translato': typeof LocacoesTranslatoRoute
   '/logs/$id': typeof LogsIdRoute
   '/veiculos/$id': typeof VeiculosIdRoute
   '/veiculos/novo': typeof VeiculosNovoRoute
@@ -163,6 +171,7 @@ export interface FileRoutesById {
   '/clientes/novo': typeof ClientesNovoRoute
   '/locacoes/$id': typeof LocacoesIdRoute
   '/locacoes/novo': typeof LocacoesNovoRoute
+  '/locacoes/translato': typeof LocacoesTranslatoRoute
   '/logs/$id': typeof LogsIdRoute
   '/veiculos/$id': typeof VeiculosIdRoute
   '/veiculos/novo': typeof VeiculosNovoRoute
@@ -184,6 +193,7 @@ export interface FileRouteTypes {
     | '/clientes/novo'
     | '/locacoes/$id'
     | '/locacoes/novo'
+    | '/locacoes/translato'
     | '/logs/$id'
     | '/veiculos/$id'
     | '/veiculos/novo'
@@ -203,6 +213,7 @@ export interface FileRouteTypes {
     | '/clientes/novo'
     | '/locacoes/$id'
     | '/locacoes/novo'
+    | '/locacoes/translato'
     | '/logs/$id'
     | '/veiculos/$id'
     | '/veiculos/novo'
@@ -222,6 +233,7 @@ export interface FileRouteTypes {
     | '/clientes/novo'
     | '/locacoes/$id'
     | '/locacoes/novo'
+    | '/locacoes/translato'
     | '/logs/$id'
     | '/veiculos/$id'
     | '/veiculos/novo'
@@ -242,6 +254,7 @@ export interface RootRouteChildren {
   ClientesNovoRoute: typeof ClientesNovoRoute
   LocacoesIdRoute: typeof LocacoesIdRoute
   LocacoesNovoRoute: typeof LocacoesNovoRoute
+  LocacoesTranslatoRoute: typeof LocacoesTranslatoRoute
   LogsIdRoute: typeof LogsIdRoute
   VeiculosIdRoute: typeof VeiculosIdRoute
   VeiculosNovoRoute: typeof VeiculosNovoRoute
@@ -337,6 +350,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LocacoesNovoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/locacoes/translato': {
+      id: '/locacoes/translato'
+      path: '/locacoes/translato'
+      fullPath: '/locacoes/translato'
+      preLoaderRoute: typeof LocacoesTranslatoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/logs/': {
       id: '/logs/'
       path: '/logs'
@@ -386,6 +406,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClientesNovoRoute: ClientesNovoRoute,
   LocacoesIdRoute: LocacoesIdRoute,
   LocacoesNovoRoute: LocacoesNovoRoute,
+  LocacoesTranslatoRoute: LocacoesTranslatoRoute,
   LogsIdRoute: LogsIdRoute,
   VeiculosIdRoute: VeiculosIdRoute,
   VeiculosNovoRoute: VeiculosNovoRoute,
