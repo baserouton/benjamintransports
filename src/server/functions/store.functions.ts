@@ -163,6 +163,18 @@ export const updateVehicleCategoryFn = createServerFn({ method: "POST" })
     return updateVehicleCategoryHandler(data);
   });
 
+export const deleteVehicleCategoryFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      id: z.string().min(1).max(36),
+      migrateToCategoryId: z.string().min(1).max(36).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { deleteVehicleCategoryHandler } = await import("./store.handlers.server");
+    return deleteVehicleCategoryHandler(data);
+  });
+
 export const hideVehicleFn = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string().min(1).max(36) }))
   .handler(async ({ data }) => {

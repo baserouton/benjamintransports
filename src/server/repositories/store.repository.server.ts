@@ -225,6 +225,55 @@ export async function updateVehicleCategory(id: string, nome: string) {
   return { id, nome: normalized, ativo: current.ativo } satisfies VehicleCategory;
 }
 
+export async function deleteVehicleCategory(id: string, migrateToCategoryId?: string) {
+  const [current] = await db
+    .select()
+    .from(vehicleCategories)
+    .where(eq(vehicleCategories.id, id))
+    .limit(1);
+  if (!current) throw new Error("Categoria não encontrada");
+
+  const vehiclesInCategory = await db
+    .select({ id: vehicles.id })
+    .from(vehicles)
+    .where(eq(vehicles.categoria, current.nome));
+
+  if (vehiclesInCategory.length > 0) {
+    if (!migrateToCategoryId) {
+      throw new Error(
+        `Há ${vehiclesInCategory.length} veículo(s) nesta categoria. Escolha para onde migrar.`,
+      );
+    }
+    if (migrateToCategoryId === id) {
+      throw new Error("Escolha uma categoria diferente para migrar os veículos");
+    }
+    const [target] = await db
+      .select()
+      .from(vehicleCategories)
+      .where(eq(vehicleCategories.id, migrateToCategoryId))
+      .limit(1);
+    if (!target) throw new Error("Categoria de destino não encontrada");
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(vehicles)
+        .set({ categoria: target.nome })
+        .where(eq(vehicles.categoria, current.nome));
+      await tx.delete(vehicleCategories).where(eq(vehicleCategories.id, id));
+    });
+
+    return {
+      id,
+      nome: current.nome,
+      migratedTo: target.nome,
+      vehiclesMoved: vehiclesInCategory.length,
+    };
+  }
+
+  await db.delete(vehicleCategories).where(eq(vehicleCategories.id, id));
+  return { id, nome: current.nome, migratedTo: null as string | null, vehiclesMoved: 0 };
+}
+
 export type VehicleUpdateInput = {
   modelo: string;
   placa: string;

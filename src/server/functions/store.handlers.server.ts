@@ -26,6 +26,7 @@ import {
   insertVehicle,
   returnRental,
   assertVehicleCategoryExists,
+  deleteVehicleCategory,
   insertVehicleCategory,
   setVehicleHidden,
   updateVehicle,
@@ -147,6 +148,28 @@ export async function updateVehicleCategoryHandler(data: { id: string; nome: str
     detalhes: { id: category.id, nome: category.nome },
   });
   return category;
+}
+
+export async function deleteVehicleCategoryHandler(data: {
+  id: string;
+  migrateToCategoryId?: string;
+}) {
+  const session = await requireSession();
+  const result = await deleteVehicleCategory(data.id, data.migrateToCategoryId);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: result.vehiclesMoved
+      ? `Excluiu categoria ${result.nome} e migrou ${result.vehiclesMoved} veículo(s) para ${result.migratedTo}`
+      : `Excluiu categoria ${result.nome}`,
+    categoria: "veiculo",
+    detalhes: {
+      id: result.id,
+      nome: result.nome,
+      migratedTo: result.migratedTo,
+      vehiclesMoved: result.vehiclesMoved,
+    },
+  });
+  return result;
 }
 
 export async function uploadVehiclePhotosHandler(data: { images: string[] }) {
