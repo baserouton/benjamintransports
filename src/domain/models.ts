@@ -22,10 +22,95 @@ export interface Vehicle {
   disponivel: boolean;
   /** Soft-delete: some da lista de veículos, mas mantém histórico. */
   oculto: boolean;
+  /** Seguro do veículo foi contratado/emitido. */
+  seguroFeito: boolean;
   seguroValidade?: string;
+  /** Vistoria veicular (documento) foi realizada. */
+  vistoriaFeita: boolean;
+  vistoriaValidade?: string;
   /** Valor pago na compra do veículo (base do payback). */
   custoAquisicao?: number;
   moedaAquisicao?: Currency;
+}
+
+export type ComplianceExpiryKind = "seguro" | "vistoria";
+export type ComplianceExpiryLevel = "expired" | "upcoming";
+
+export interface VehicleComplianceAlert {
+  vehicleId: string;
+  modelo: string;
+  placa: string;
+  kind: ComplianceExpiryKind;
+  level: ComplianceExpiryLevel;
+  validade: string;
+  daysLeft: number;
+}
+
+/** Status de vencimento: 1 mês (30 dias) antes = upcoming. */
+export function getComplianceExpiry(
+  validade: string | undefined,
+  now = new Date(),
+): { level: ComplianceExpiryLevel; daysLeft: number } | null {
+  if (!validade) return null;
+  const end = new Date(`${validade}T12:00:00`);
+  if (Number.isNaN(end.getTime())) return null;
+  const start = new Date(now);
+  start.setHours(12, 0, 0, 0);
+  const daysLeft = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
+  if (daysLeft < 0) return { level: "expired", daysLeft };
+  if (daysLeft <= 30) return { level: "upcoming", daysLeft };
+  return null;
+}
+
+export function listVehicleComplianceAlerts(
+  vehicles: Array<
+    Pick<
+      Vehicle,
+      | "id"
+      | "modelo"
+      | "placa"
+      | "oculto"
+      | "seguroFeito"
+      | "seguroValidade"
+      | "vistoriaFeita"
+      | "vistoriaValidade"
+    >
+  >,
+  now = new Date(),
+): VehicleComplianceAlert[] {
+  const alerts: VehicleComplianceAlert[] = [];
+  for (const v of vehicles) {
+    if (v.oculto) continue;
+    if (v.seguroFeito) {
+      const status = getComplianceExpiry(v.seguroValidade, now);
+      if (status && v.seguroValidade) {
+        alerts.push({
+          vehicleId: v.id,
+          modelo: v.modelo,
+          placa: v.placa,
+          kind: "seguro",
+          level: status.level,
+          validade: v.seguroValidade,
+          daysLeft: status.daysLeft,
+        });
+      }
+    }
+    if (v.vistoriaFeita) {
+      const status = getComplianceExpiry(v.vistoriaValidade, now);
+      if (status && v.vistoriaValidade) {
+        alerts.push({
+          vehicleId: v.id,
+          modelo: v.modelo,
+          placa: v.placa,
+          kind: "vistoria",
+          level: status.level,
+          validade: v.vistoriaValidade,
+          daysLeft: status.daysLeft,
+        });
+      }
+    }
+  }
+  return alerts.sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
 export interface Client {
@@ -81,6 +166,39 @@ export interface Maintenance {
   obs?: string;
 }
 
+/** Classificação do lançamento no financeiro da empresa. */
+export type FinanceCategory =
+  | "aluguel"
+  | "taxa"
+  | "manutencao"
+  | "aquisicao"
+  | "seguro"
+  | "vistoria"
+  | "operacional"
+  | "outro";
+
+export const FINANCE_CATEGORIES: FinanceCategory[] = [
+  "aluguel",
+  "taxa",
+  "manutencao",
+  "aquisicao",
+  "seguro",
+  "vistoria",
+  "operacional",
+  "outro",
+];
+
+export const FINANCE_CATEGORY_LABELS: Record<FinanceCategory, string> = {
+  aluguel: "Aluguel",
+  taxa: "Taxa",
+  manutencao: "Manutenção",
+  aquisicao: "Aquisição de veículo",
+  seguro: "Seguro",
+  vistoria: "Vistoria",
+  operacional: "Operacional",
+  outro: "Outro",
+};
+
 export interface FinanceEntry {
   id: string;
   data: string;
@@ -88,6 +206,9 @@ export interface FinanceEntry {
   valor: number;
   moeda: Currency;
   tipo: "entrada" | "despesa";
+  categoria: FinanceCategory;
+  /** true = criado manualmente na tela Financeiro (pode excluir). */
+  manual: boolean;
   veiculoId?: string;
 }
 
@@ -101,7 +222,8 @@ export interface VehiclePayback {
   achieved: boolean;
 }
 
-/** Payback = o quanto já foi alugado (entradas) vs o custo de aquisição, na mesma moeda. */
+/** Payback = faturamento (entradas) vs custo de aquisição, na mesma moeda.
+ * remaining = custo − faturamento (positivo = ainda a recuperar; negativo = já lucrativo). */
 export function calcVehiclePayback(
   vehicle: Pick<Vehicle, "id" | "custoAquisicao" | "moedaAquisicao">,
   finance: FinanceEntry[],
@@ -113,6 +235,8 @@ export function calcVehiclePayback(
   let expenses = 0;
   for (const entry of finance) {
     if (entry.veiculoId !== vehicle.id || entry.moeda !== currency) continue;
+    // Aquisição não entra de novo nas despesas operacionais do payback.
+    if (entry.categoria === "aquisicao") continue;
     if (entry.tipo === "entrada") rented += entry.valor;
     else expenses += entry.valor;
   }
@@ -121,7 +245,7 @@ export function calcVehiclePayback(
     cost,
     rented,
     expenses,
-    remaining: Math.max(0, cost - rented),
+    remaining: cost - rented,
     pct: (rented / cost) * 100,
     achieved: rented >= cost,
   };

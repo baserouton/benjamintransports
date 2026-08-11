@@ -1,4 +1,11 @@
-import type { Client, InspectionIn, Maintenance, Rental, Vehicle } from "@/domain/models";
+import type {
+  Client,
+  FinanceEntry,
+  InspectionIn,
+  Maintenance,
+  Rental,
+  Vehicle,
+} from "@/domain/models";
 import {
   authenticate,
   destroySession,
@@ -7,9 +14,11 @@ import {
 } from "@/server/auth/auth.server";
 import {
   deliverRental,
+  deleteFinanceEntry,
   findStore,
   insertActivityLog,
   insertClient,
+  insertFinanceEntry,
   insertMaintenance,
   insertRental,
   insertVehicle,
@@ -207,6 +216,32 @@ export async function returnRentalHandler(data: { id: string; inspection: Inspec
     categoria: "locacao",
   });
   return { ok: true };
+}
+
+export async function createFinanceEntryHandler(
+  data: Omit<FinanceEntry, "id" | "manual">,
+) {
+  const session = await requireSession();
+  const id = await insertFinanceEntry({ ...data, manual: true });
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Lançou ${data.tipo} manual: ${data.descricao}`,
+    categoria: "financeiro",
+    detalhes: { id, tipo: data.tipo, valor: data.valor, moeda: data.moeda },
+  });
+  return { id };
+}
+
+export async function deleteFinanceEntryHandler(data: { id: string }) {
+  const session = await requireSession();
+  await deleteFinanceEntry(data.id);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Excluiu lançamento financeiro manual ${data.id.slice(0, 6)}`,
+    categoria: "financeiro",
+    detalhes: { id: data.id },
+  });
+  return { id: data.id };
 }
 
 export async function activityLogHandler(data: {

@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { VehicleCategoryField } from "@/components/vehicle-category-field";
+import {
+  VehicleComplianceFields,
+  validateCompliance,
+  type ComplianceFormValue,
+} from "@/components/vehicle-compliance-fields";
 import { useI18n } from "@/lib/i18n";
 import {
   useStore,
@@ -18,6 +23,7 @@ import {
   updateVehicleFn,
   uploadVehiclePhotosFn,
 } from "@/server/functions/store.functions";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,7 +47,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Car, Wrench, Wallet, Target, Pencil, EyeOff, Eye, Upload, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Car,
+  Wrench,
+  Wallet,
+  Target,
+  Pencil,
+  EyeOff,
+  Eye,
+  Upload,
+  X,
+  ShieldAlert,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -87,9 +105,14 @@ function VehicleDetail() {
     placa: "",
     categoria: "CARROS" as Category,
     ano: "" as number | "",
-    seguroValidade: "",
     custoAquisicao: "" as number | "",
     moedaAquisicao: "SRD" as Currency,
+  });
+  const [compliance, setCompliance] = useState<ComplianceFormValue>({
+    seguroFeito: false,
+    seguroValidade: "",
+    vistoriaFeita: false,
+    vistoriaValidade: "",
   });
   const [fotos, setFotos] = useState<string[]>([]);
   const [newPhotos, setNewPhotos] = useState<Array<{ file: File; preview: string }>>([]);
@@ -101,9 +124,14 @@ function VehicleDetail() {
       placa: v.placa,
       categoria: v.categoria,
       ano: v.ano ?? "",
-      seguroValidade: v.seguroValidade ?? "",
       custoAquisicao: v.custoAquisicao ?? "",
       moedaAquisicao: v.moedaAquisicao ?? "SRD",
+    });
+    setCompliance({
+      seguroFeito: v.seguroFeito,
+      seguroValidade: v.seguroValidade ?? "",
+      vistoriaFeita: v.vistoriaFeita,
+      vistoriaValidade: v.vistoriaValidade ?? "",
     });
     setFotos(v.fotos ?? []);
     setNewPhotos([]);
@@ -114,7 +142,10 @@ function VehicleDetail() {
     v?.placa,
     v?.categoria,
     v?.ano,
+    v?.seguroFeito,
     v?.seguroValidade,
+    v?.vistoriaFeita,
+    v?.vistoriaValidade,
     v?.custoAquisicao,
     v?.moedaAquisicao,
     v?.fotos,
@@ -139,9 +170,18 @@ function VehicleDetail() {
   const payback = calcVehiclePayback(v, s.finance);
   const paybackPct = payback ? Math.min(100, payback.pct) : 0;
 
+  const pendingCompliance: string[] = [];
+  if (!v.seguroFeito || !v.seguroValidade) pendingCompliance.push("Seguro");
+  if (!v.vistoriaFeita || !v.vistoriaValidade) pendingCompliance.push("Vistoria");
+
   const saveEdit = async () => {
     if (!form.modelo.trim() || !form.placa.trim()) {
       toast.error("Preencha modelo e placa.");
+      return;
+    }
+    const complianceError = validateCompliance(compliance);
+    if (complianceError) {
+      toast.error(complianceError);
       return;
     }
     setSaving(true);
@@ -159,7 +199,10 @@ function VehicleDetail() {
           placa: form.placa.trim().toUpperCase(),
           categoria: form.categoria,
           ano: typeof form.ano === "number" ? form.ano : undefined,
-          seguroValidade: form.seguroValidade || undefined,
+          seguroFeito: compliance.seguroFeito,
+          seguroValidade: compliance.seguroValidade || undefined,
+          vistoriaFeita: compliance.vistoriaFeita,
+          vistoriaValidade: compliance.vistoriaValidade || undefined,
           custoAquisicao:
             form.custoAquisicao === "" ? undefined : Number(form.custoAquisicao),
           moedaAquisicao: form.moedaAquisicao,
@@ -258,6 +301,32 @@ function VehicleDetail() {
         </Card>
       )}
 
+      {pendingCompliance.length > 0 && !editing && (
+        <Alert className="mb-4">
+          <ShieldAlert className="h-4 w-4" />
+          <AlertTitle>Pendência de cadastrar {pendingCompliance.join(" e ")}</AlertTitle>
+          <AlertDescription className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p>
+              Este veículo ainda não tem{" "}
+              {pendingCompliance.length === 2
+                ? "Seguro e Vistoria cadastrados"
+                : `${pendingCompliance[0]} cadastrado(a)`}
+              . Informe se foi feito(a) e a data de vencimento.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-3.5 w-3.5 mr-1" />
+              Cadastrar agora
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {payback && (
         <Card className={`p-5 mb-4 ${payback.achieved ? "bg-foreground text-background border-foreground" : ""}`}>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
@@ -282,8 +351,8 @@ function VehicleDetail() {
                 </div>
                 <div className={`text-xs mt-1 ${payback.achieved ? "opacity-70" : "text-muted-foreground"}`}>
                   {payback.achieved
-                    ? `${fmtMoney(payback.rented, payback.currency)} alugados · custo ${fmtMoney(payback.cost, payback.currency)}`
-                    : `${t("paybackPending")}: ${fmtMoney(payback.remaining, payback.currency)}`}
+                    ? `${fmtMoney(payback.rented, payback.currency)} alugados · custo ${fmtMoney(payback.cost, payback.currency)} · saldo +${fmtMoney(Math.abs(payback.remaining), payback.currency)}`
+                    : `${t("paybackPending")}: ${fmtMoney(Math.max(0, payback.remaining), payback.currency)}`}
                 </div>
               </div>
             </div>
@@ -463,14 +532,7 @@ function VehicleDetail() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Seguro válido até</Label>
-                  <Input
-                    type="date"
-                    value={form.seguroValidade}
-                    onChange={(e) => setForm({ ...form, seguroValidade: e.target.value })}
-                  />
-                </div>
+                <VehicleComplianceFields value={compliance} onChange={setCompliance} />
                 <div className="flex gap-2 pt-2">
                   <Button
                     type="button"
@@ -513,7 +575,22 @@ function VehicleDetail() {
                     )
                   }
                 />
-                <Row k="Seguro válido até" v={v.seguroValidade ?? "—"} />
+                <Row
+                  k="Seguro"
+                  v={
+                    v.seguroFeito
+                      ? `Feito · vence ${v.seguroValidade ?? "—"}`
+                      : "Não foi feito"
+                  }
+                />
+                <Row
+                  k="Vistoria"
+                  v={
+                    v.vistoriaFeita
+                      ? `Feita · vence ${v.vistoriaValidade ?? "—"}`
+                      : "Não foi feita"
+                  }
+                />
               </>
             )}
           </CardContent>

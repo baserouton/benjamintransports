@@ -9,6 +9,7 @@ export type {
   Category,
   Client,
   Currency,
+  FinanceCategory,
   FinanceEntry,
   InspectionIn,
   InspectionOut,
@@ -20,9 +21,17 @@ export type {
   UserAccount,
   Vehicle,
   VehicleCategory,
+  VehicleComplianceAlert,
   VehiclePayback,
 } from "@/domain/models";
-export { calcVehiclePayback, fmtMoney } from "@/domain/models";
+export {
+  FINANCE_CATEGORIES,
+  FINANCE_CATEGORY_LABELS,
+  calcVehiclePayback,
+  fmtMoney,
+  getComplianceExpiry,
+  listVehicleComplianceAlerts,
+} from "@/domain/models";
 
 export const STORE_QUERY_KEY = ["store"] as const;
 const STORE_CHANGE_EVENT = "locadora-store-change";

@@ -1,9 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Plus, Search, Car, ShieldAlert, ShieldCheck, TrendingUp } from "lucide-react";
+import { Plus, Search, Car, ShieldAlert, ShieldCheck, TrendingUp, ClipboardCheck } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
-import { useStore, calcVehiclePayback, fmtMoney, type Category } from "@/lib/data-store";
+import {
+  useStore,
+  calcVehiclePayback,
+  fmtMoney,
+  getComplianceExpiry,
+  listVehicleComplianceAlerts,
+  type Category,
+} from "@/lib/data-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -61,22 +68,20 @@ function VehiclesList() {
     return ["TODOS" as const, ...fromStore, ...Array.from(new Set(extras))];
   }, [s.vehicleCategories, visibleVehicles]);
 
+  const complianceAlerts = useMemo(
+    () => listVehicleComplianceAlerts(visibleVehicles),
+    [visibleVehicles],
+  );
+
   const stats = useMemo(() => {
     const total = visibleVehicles.length;
     const available = visibleVehicles.filter((v) => v.disponivel).length;
     const rented = total - available;
-    const now = new Date();
-    const in30 = new Date();
-    in30.setDate(now.getDate() + 30);
-    const expired = visibleVehicles.filter((v) => v.seguroValidade && new Date(v.seguroValidade) < now).length;
-    const upcoming = visibleVehicles.filter((v) => {
-      if (!v.seguroValidade) return false;
-      const d = new Date(v.seguroValidade);
-      return d >= now && d <= in30;
-    }).length;
+    const expired = complianceAlerts.filter((a) => a.level === "expired").length;
+    const upcoming = complianceAlerts.filter((a) => a.level === "upcoming").length;
     const occupancy = total > 0 ? Math.round((rented / total) * 100) : 0;
     return { total, available, rented, expired, upcoming, occupancy };
-  }, [visibleVehicles]);
+  }, [visibleVehicles, complianceAlerts]);
 
   const categoryBreakdown = useMemo(() => {
     const map = new Map<Category, { cat: Category; total: number; rented: number }>();
@@ -163,7 +168,7 @@ function VehiclesList() {
         <Card className="rounded-2xl p-6">
           <div className="flex items-start justify-between">
             <span className="text-[11px] font-bold tracking-widest uppercase text-muted-foreground">
-              {lang === "pt" ? "Seguros" : "Verzekeringen"}
+              {lang === "pt" ? "Seguro & vistoria" : "Verzekering & keuring"}
             </span>
             <ShieldAlert className="h-4 w-4 text-muted-foreground" />
           </div>
@@ -184,6 +189,72 @@ function VehiclesList() {
           </div>
         </Card>
       </div>
+
+      {complianceAlerts.length > 0 && (
+        <Card className="rounded-2xl overflow-hidden border-foreground/20">
+          <div className="p-5 border-b border-border bg-muted/40 flex items-start gap-3">
+            <ShieldAlert className="h-5 w-5 mt-0.5 shrink-0" />
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-wider">
+                {lang === "pt"
+                  ? "Atenção: seguro ou vistoria próximos do vencimento"
+                  : "Let op: verzekering of keuring bijna verlopen"}
+              </h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                {lang === "pt"
+                  ? "Avisos a partir de 1 mês antes do vencimento (e itens já vencidos)."
+                  : "Waarschuwingen vanaf 1 maand voor de vervaldatum (en al verlopen items)."}
+              </p>
+            </div>
+          </div>
+          <div className="divide-y divide-border">
+            {complianceAlerts.map((alert) => (
+              <Link
+                key={`${alert.vehicleId}-${alert.kind}`}
+                to="/veiculos/$id"
+                params={{ id: alert.vehicleId }}
+                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 hover:bg-muted/40 transition-colors"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">
+                    {alert.modelo}{" "}
+                    <span className="font-mono text-xs text-muted-foreground">{alert.placa}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1.5">
+                    {alert.kind === "seguro" ? (
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                    ) : (
+                      <ClipboardCheck className="h-3.5 w-3.5" />
+                    )}
+                    {alert.kind === "seguro"
+                      ? lang === "pt"
+                        ? "Seguro"
+                        : "Verzekering"
+                      : lang === "pt"
+                        ? "Vistoria"
+                        : "Keuring"}
+                    {" · "}
+                    {lang === "pt" ? "vence" : "vervalt"} {alert.validade}
+                  </div>
+                </div>
+                <Badge variant={alert.level === "expired" ? "default" : "outline"}>
+                  {alert.level === "expired"
+                    ? lang === "pt"
+                      ? "Vencido"
+                      : "Verlopen"
+                    : alert.daysLeft === 0
+                      ? lang === "pt"
+                        ? "Vence hoje"
+                        : "Vervalt vandaag"
+                      : lang === "pt"
+                        ? `${alert.daysLeft} dia(s)`
+                        : `${alert.daysLeft} dag(en)`}
+                </Badge>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Category breakdown */}
       <Card className="rounded-2xl overflow-hidden">
@@ -270,6 +341,7 @@ function VehiclesList() {
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("category")}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("status")}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{lang === "pt" ? "Seguro" : "Verzekering"}</TableHead>
+                <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{lang === "pt" ? "Vistoria" : "Keuring"}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("payback")}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">{t("view")}</TableHead>
               </TableRow>
@@ -277,16 +349,19 @@ function VehiclesList() {
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
                     {t("noRecords")}
                   </TableCell>
                 </TableRow>
               )}
               {filtered.map((v) => {
-                const now = new Date();
-                const validity = v.seguroValidade ? new Date(v.seguroValidade) : null;
-                const expired = validity ? validity < now : false;
                 const payback = calcVehiclePayback(v, s.finance);
+                const seguroStatus = v.seguroFeito
+                  ? getComplianceExpiry(v.seguroValidade)
+                  : null;
+                const vistoriaStatus = v.vistoriaFeita
+                  ? getComplianceExpiry(v.vistoriaValidade)
+                  : null;
                 return (
                   <TableRow key={v.id}>
                     <TableCell className="font-medium">
@@ -315,13 +390,45 @@ function VehiclesList() {
                       </span>
                     </TableCell>
                     <TableCell className="text-xs">
-                      {validity ? (
-                        <span className={expired ? "text-foreground font-semibold" : "text-muted-foreground"}>
-                          {v.seguroValidade}
-                          {expired && <span className="ml-1 text-[10px] uppercase tracking-wider">· {lang === "pt" ? "vencido" : "verlopen"}</span>}
-                        </span>
+                      {!v.seguroFeito ? (
+                        <span className="text-muted-foreground">{lang === "pt" ? "Não" : "Nee"}</span>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className={seguroStatus ? "text-foreground font-semibold" : "text-muted-foreground"}>
+                          {v.seguroValidade ?? "—"}
+                          {seguroStatus?.level === "expired" && (
+                            <span className="ml-1 text-[10px] uppercase tracking-wider">
+                              · {lang === "pt" ? "vencido" : "verlopen"}
+                            </span>
+                          )}
+                          {seguroStatus?.level === "upcoming" && (
+                            <span className="ml-1 text-[10px] uppercase tracking-wider">
+                              · {lang === "pt" ? "próximo" : "binnenkort"}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {!v.vistoriaFeita ? (
+                        <span className="text-muted-foreground">{lang === "pt" ? "Não" : "Nee"}</span>
+                      ) : (
+                        <span
+                          className={
+                            vistoriaStatus ? "text-foreground font-semibold" : "text-muted-foreground"
+                          }
+                        >
+                          {v.vistoriaValidade ?? "—"}
+                          {vistoriaStatus?.level === "expired" && (
+                            <span className="ml-1 text-[10px] uppercase tracking-wider">
+                              · {lang === "pt" ? "vencido" : "verlopen"}
+                            </span>
+                          )}
+                          {vistoriaStatus?.level === "upcoming" && (
+                            <span className="ml-1 text-[10px] uppercase tracking-wider">
+                              · {lang === "pt" ? "próximo" : "binnenkort"}
+                            </span>
+                          )}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-xs min-w-[140px]">
@@ -332,7 +439,7 @@ function VehiclesList() {
                             <span className="text-muted-foreground font-normal">
                               {payback.achieved
                                 ? t("paybackAchieved")
-                                : fmtMoney(payback.remaining, payback.currency)}
+                                : fmtMoney(Math.max(0, payback.remaining), payback.currency)}
                             </span>
                           </div>
                           <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">

@@ -3,6 +3,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
   ActivityLog,
   Client,
+  FinanceCategory,
+  FinanceEntry,
   InspectionIn,
   Maintenance,
   Rental,
@@ -61,7 +63,10 @@ export async function findStore(): Promise<Store> {
     vehicles: vehicleRows.map(({ createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({
       ...row,
       ano: row.ano ?? undefined,
+      seguroFeito: Boolean(row.seguroFeito),
       seguroValidade: row.seguroValidade ?? undefined,
+      vistoriaFeita: Boolean(row.vistoriaFeita),
+      vistoriaValidade: row.vistoriaValidade ?? undefined,
       custoAquisicao: row.custoAquisicao ?? undefined,
       moedaAquisicao: row.moedaAquisicao ?? undefined,
     })),
@@ -90,6 +95,8 @@ export async function findStore(): Promise<Store> {
     ),
     finance: financeRows.map(({ createdAt: _createdAt, ...row }) => ({
       ...row,
+      categoria: (row.categoria as FinanceCategory) || "outro",
+      manual: Boolean(row.manual),
       veiculoId: row.veiculoId ?? undefined,
     })),
     users: userRows,
@@ -132,11 +139,32 @@ export async function assertVehicleCategoryExists(nome: string) {
 
 export async function insertVehicle(input: Omit<Vehicle, "id">) {
   const id = randomUUID();
-  await db.insert(vehicles).values({
-    id,
-    ...input,
-    fotos: input.fotos ?? [],
-    oculto: input.oculto ?? false,
+  const seguroFeito = input.seguroFeito ?? false;
+  const vistoriaFeita = input.vistoriaFeita ?? false;
+  await db.transaction(async (tx) => {
+    await tx.insert(vehicles).values({
+      id,
+      ...input,
+      fotos: input.fotos ?? [],
+      oculto: input.oculto ?? false,
+      seguroFeito,
+      seguroValidade: seguroFeito ? (input.seguroValidade ?? null) : null,
+      vistoriaFeita,
+      vistoriaValidade: vistoriaFeita ? (input.vistoriaValidade ?? null) : null,
+    });
+    if (input.custoAquisicao != null && input.custoAquisicao > 0) {
+      await tx.insert(financeEntries).values({
+        id: randomUUID(),
+        data: new Date().toISOString().slice(0, 10),
+        descricao: `Aquisição — ${input.modelo} (${input.placa})`,
+        valor: input.custoAquisicao,
+        moeda: input.moedaAquisicao ?? "SRD",
+        tipo: "despesa",
+        categoria: "aquisicao",
+        manual: false,
+        veiculoId: id,
+      });
+    }
   });
   return id;
 }
@@ -192,26 +220,68 @@ export type VehicleUpdateInput = {
   placa: string;
   categoria: Vehicle["categoria"];
   ano?: number;
+  seguroFeito: boolean;
   seguroValidade?: string;
+  vistoriaFeita: boolean;
+  vistoriaValidade?: string;
   custoAquisicao?: number;
   moedaAquisicao?: Vehicle["moedaAquisicao"];
   fotos?: string[];
 };
 
 export async function updateVehicle(id: string, input: VehicleUpdateInput) {
-  await db
-    .update(vehicles)
-    .set({
-      modelo: input.modelo,
-      placa: input.placa,
-      categoria: input.categoria,
-      ano: input.ano ?? null,
-      seguroValidade: input.seguroValidade ?? null,
-      custoAquisicao: input.custoAquisicao ?? null,
-      moedaAquisicao: input.moedaAquisicao ?? null,
-      ...(input.fotos ? { fotos: input.fotos } : {}),
-    })
-    .where(eq(vehicles.id, id));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(vehicles)
+      .set({
+        modelo: input.modelo,
+        placa: input.placa,
+        categoria: input.categoria,
+        ano: input.ano ?? null,
+        seguroFeito: input.seguroFeito,
+        seguroValidade: input.seguroFeito ? (input.seguroValidade ?? null) : null,
+        vistoriaFeita: input.vistoriaFeita,
+        vistoriaValidade: input.vistoriaFeita ? (input.vistoriaValidade ?? null) : null,
+        custoAquisicao: input.custoAquisicao ?? null,
+        moedaAquisicao: input.moedaAquisicao ?? null,
+        ...(input.fotos ? { fotos: input.fotos } : {}),
+      })
+      .where(eq(vehicles.id, id));
+
+    if (input.custoAquisicao != null && input.custoAquisicao > 0) {
+      const [existing] = await tx
+        .select({ id: financeEntries.id })
+        .from(financeEntries)
+        .where(
+          and(eq(financeEntries.veiculoId, id), eq(financeEntries.categoria, "aquisicao")),
+        )
+        .limit(1);
+      const descricao = `Aquisição — ${input.modelo} (${input.placa})`;
+      const moeda = input.moedaAquisicao ?? "SRD";
+      if (existing) {
+        await tx
+          .update(financeEntries)
+          .set({
+            descricao,
+            valor: input.custoAquisicao,
+            moeda,
+          })
+          .where(eq(financeEntries.id, existing.id));
+      } else {
+        await tx.insert(financeEntries).values({
+          id: randomUUID(),
+          data: new Date().toISOString().slice(0, 10),
+          descricao,
+          valor: input.custoAquisicao,
+          moeda,
+          tipo: "despesa",
+          categoria: "aquisicao",
+          manual: false,
+          veiculoId: id,
+        });
+      }
+    }
+  });
 }
 
 export async function setVehicleHidden(id: string, oculto: boolean) {
@@ -275,8 +345,23 @@ export async function insertRental(input: Omit<Rental, "id" | "status">) {
       valor: input.valorAluguel,
       moeda: input.moeda,
       tipo: "entrada",
+      categoria: "aluguel",
+      manual: false,
       veiculoId: input.veiculoId,
     });
+    if (input.seguroValor != null && input.seguroValor > 0) {
+      await tx.insert(financeEntries).values({
+        id: randomUUID(),
+        data: input.dataRetirada,
+        descricao: `Seguro locação — ${vehicle?.modelo ?? ""}`.trim(),
+        valor: input.seguroValor,
+        moeda: input.moeda,
+        tipo: "entrada",
+        categoria: "seguro",
+        manual: false,
+        veiculoId: input.veiculoId,
+      });
+    }
   });
   return id;
 }
@@ -301,6 +386,8 @@ export async function insertMaintenance(input: Omit<Maintenance, "id">) {
       valor: input.custo,
       moeda: input.moeda,
       tipo: "despesa",
+      categoria: "manutencao",
+      manual: false,
       veiculoId: input.veiculoId,
     });
   });
@@ -347,10 +434,44 @@ export async function returnRental(id: string, inspection: InspectionIn) {
         valor: inspection.taxa,
         moeda: rental.moeda,
         tipo: "entrada",
+        categoria: "taxa",
+        manual: false,
         veiculoId: rental.veiculoId,
       });
     }
   });
+}
+
+export async function insertFinanceEntry(
+  input: Omit<FinanceEntry, "id" | "manual"> & { manual?: boolean },
+) {
+  const id = randomUUID();
+  await db.insert(financeEntries).values({
+    id,
+    data: input.data,
+    descricao: input.descricao.trim(),
+    valor: input.valor,
+    moeda: input.moeda,
+    tipo: input.tipo,
+    categoria: input.categoria,
+    manual: input.manual ?? true,
+    veiculoId: input.veiculoId ?? null,
+  });
+  return id;
+}
+
+export async function deleteFinanceEntry(id: string) {
+  const [row] = await db
+    .select({ id: financeEntries.id, manual: financeEntries.manual })
+    .from(financeEntries)
+    .where(eq(financeEntries.id, id))
+    .limit(1);
+  if (!row) throw new Error("Lançamento não encontrado");
+  if (!row.manual) {
+    throw new Error("Só é possível excluir lançamentos manuais");
+  }
+  await db.delete(financeEntries).where(eq(financeEntries.id, id));
+  return { id };
 }
 
 export async function insertActivityLog(input: Omit<ActivityLog, "id" | "quando">) {

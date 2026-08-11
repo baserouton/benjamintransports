@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { VehicleCategoryField } from "@/components/vehicle-category-field";
+import {
+  VehicleComplianceFields,
+  validateCompliance,
+  type ComplianceFormValue,
+} from "@/components/vehicle-compliance-fields";
 import { useI18n } from "@/lib/i18n";
 import { notifyStoreChanged, useStore, type Category, type Currency } from "@/lib/data-store";
 import { createVehicleFn, uploadVehiclePhotosFn } from "@/server/functions/store.functions";
@@ -52,6 +57,12 @@ function NewVehicle() {
   const [ano, setAno] = useState<number | "">("");
   const [custoAquisicao, setCustoAquisicao] = useState<number | "">("");
   const [moedaAquisicao, setMoedaAquisicao] = useState<Currency>("SRD");
+  const [compliance, setCompliance] = useState<ComplianceFormValue>({
+    seguroFeito: false,
+    seguroValidade: "",
+    vistoriaFeita: false,
+    vistoriaValidade: "",
+  });
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -94,6 +105,11 @@ function NewVehicle() {
       toast.error("Informe o custo de aquisição do veículo.");
       return;
     }
+    const complianceError = validateCompliance(compliance);
+    if (complianceError) {
+      toast.error(complianceError);
+      return;
+    }
     setSaving(true);
     try {
       let fotoUrls: string[] = [];
@@ -113,6 +129,10 @@ function NewVehicle() {
           disponivel: true,
           custoAquisicao: Number(custoAquisicao),
           moedaAquisicao,
+          seguroFeito: compliance.seguroFeito,
+          seguroValidade: compliance.seguroValidade || undefined,
+          vistoriaFeita: compliance.vistoriaFeita,
+          vistoriaValidade: compliance.vistoriaValidade || undefined,
         },
       });
       notifyStoreChanged();
@@ -202,6 +222,7 @@ function NewVehicle() {
                   </SelectContent>
                 </Select>
               </div>
+              <VehicleComplianceFields value={compliance} onChange={setCompliance} />
             </div>
 
             <div className="space-y-1.5">

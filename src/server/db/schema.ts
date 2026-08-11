@@ -42,7 +42,10 @@ export const vehicles = mysqlTable(
     ano: int("ano"),
     disponivel: boolean("disponivel").notNull().default(true),
     oculto: boolean("oculto").notNull().default(false),
+    seguroFeito: boolean("seguro_feito").notNull().default(false),
     seguroValidade: date("seguro_validade", { mode: "string" }),
+    vistoriaFeita: boolean("vistoria_feita").notNull().default(false),
+    vistoriaValidade: date("vistoria_validade", { mode: "string" }),
     custoAquisicao: money("custo_aquisicao"),
     moedaAquisicao: mysqlEnum("moeda_aquisicao", ["SRD", "USD", "EUR"]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -53,6 +56,8 @@ export const vehicles = mysqlTable(
     index("vehicles_categoria_idx").on(table.categoria),
     index("vehicles_disponivel_idx").on(table.disponivel),
     index("vehicles_oculto_idx").on(table.oculto),
+    index("vehicles_seguro_validade_idx").on(table.seguroValidade),
+    index("vehicles_vistoria_validade_idx").on(table.vistoriaValidade),
   ],
 );
 
@@ -141,6 +146,8 @@ export const financeEntries = mysqlTable(
     valor: money("valor").notNull(),
     moeda: mysqlEnum("moeda", ["SRD", "USD", "EUR"]).notNull(),
     tipo: mysqlEnum("tipo", ["entrada", "despesa"]).notNull(),
+    categoria: varchar("categoria", { length: 40 }).notNull().default("outro"),
+    manual: boolean("manual").notNull().default(false),
     veiculoId: varchar("veiculo_id", { length: 36 }).references(() => vehicles.id, {
       onDelete: "set null",
       onUpdate: "cascade",
@@ -150,6 +157,7 @@ export const financeEntries = mysqlTable(
   (table) => [
     index("finance_data_idx").on(table.data),
     index("finance_tipo_idx").on(table.tipo),
+    index("finance_categoria_idx").on(table.categoria),
     index("finance_veiculo_idx").on(table.veiculoId),
   ],
 );

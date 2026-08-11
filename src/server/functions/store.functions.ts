@@ -59,43 +59,88 @@ export const uploadVehiclePhotosFn = createServerFn({ method: "POST" })
 
 export const createVehicleFn = createServerFn({ method: "POST" })
   .validator(
-    z.object({
-      modelo: z.string().trim().min(1).max(160),
-      placa: z.string().trim().min(1).max(32),
-      categoria: z.string().trim().min(1).max(80),
-      fotos: z.array(z.string().max(500)).max(20).default([]),
-      ano: z.number().int().min(1900).max(2200).optional(),
-      disponivel: z.boolean().default(true),
-      oculto: z.boolean().default(false),
-      seguroValidade: dateSchema.optional(),
-      custoAquisicao: z.number().positive(),
-      moedaAquisicao: z.enum(["SRD", "USD", "EUR"]),
-    }),
+    z
+      .object({
+        modelo: z.string().trim().min(1).max(160),
+        placa: z.string().trim().min(1).max(32),
+        categoria: z.string().trim().min(1).max(80),
+        fotos: z.array(z.string().max(500)).max(20).default([]),
+        ano: z.number().int().min(1900).max(2200).optional(),
+        disponivel: z.boolean().default(true),
+        oculto: z.boolean().default(false),
+        seguroFeito: z.boolean().default(false),
+        seguroValidade: dateSchema.optional().or(z.literal("")),
+        vistoriaFeita: z.boolean().default(false),
+        vistoriaValidade: dateSchema.optional().or(z.literal("")),
+        custoAquisicao: z.number().positive(),
+        moedaAquisicao: z.enum(["SRD", "USD", "EUR"]),
+      })
+      .superRefine((data, ctx) => {
+        if (data.seguroFeito && !data.seguroValidade) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Informe o vencimento do seguro",
+            path: ["seguroValidade"],
+          });
+        }
+        if (data.vistoriaFeita && !data.vistoriaValidade) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Informe o vencimento da vistoria",
+            path: ["vistoriaValidade"],
+          });
+        }
+      }),
   )
   .handler(async ({ data }) => {
     const { createVehicleHandler } = await import("./store.handlers.server");
-    return createVehicleHandler(data);
+    return createVehicleHandler({
+      ...data,
+      seguroValidade: data.seguroFeito ? data.seguroValidade || undefined : undefined,
+      vistoriaValidade: data.vistoriaFeita ? data.vistoriaValidade || undefined : undefined,
+    });
   });
 
 export const updateVehicleFn = createServerFn({ method: "POST" })
   .validator(
-    z.object({
-      id: z.string().min(1).max(36),
-      modelo: z.string().trim().min(1).max(160),
-      placa: z.string().trim().min(1).max(32),
-      categoria: z.string().trim().min(1).max(80),
-      ano: z.number().int().min(1900).max(2200).optional(),
-      seguroValidade: dateSchema.optional().or(z.literal("")),
-      custoAquisicao: z.number().positive().optional(),
-      moedaAquisicao: z.enum(["SRD", "USD", "EUR"]).optional(),
-      fotos: z.array(z.string().max(500)).max(20).optional(),
-    }),
+    z
+      .object({
+        id: z.string().min(1).max(36),
+        modelo: z.string().trim().min(1).max(160),
+        placa: z.string().trim().min(1).max(32),
+        categoria: z.string().trim().min(1).max(80),
+        ano: z.number().int().min(1900).max(2200).optional(),
+        seguroFeito: z.boolean(),
+        seguroValidade: dateSchema.optional().or(z.literal("")),
+        vistoriaFeita: z.boolean(),
+        vistoriaValidade: dateSchema.optional().or(z.literal("")),
+        custoAquisicao: z.number().positive().optional(),
+        moedaAquisicao: z.enum(["SRD", "USD", "EUR"]).optional(),
+        fotos: z.array(z.string().max(500)).max(20).optional(),
+      })
+      .superRefine((data, ctx) => {
+        if (data.seguroFeito && !data.seguroValidade) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Informe o vencimento do seguro",
+            path: ["seguroValidade"],
+          });
+        }
+        if (data.vistoriaFeita && !data.vistoriaValidade) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Informe o vencimento da vistoria",
+            path: ["vistoriaValidade"],
+          });
+        }
+      }),
   )
   .handler(async ({ data }) => {
     const { updateVehicleHandler } = await import("./store.handlers.server");
     return updateVehicleHandler({
       ...data,
-      seguroValidade: data.seguroValidade || undefined,
+      seguroValidade: data.seguroFeito ? data.seguroValidade || undefined : undefined,
+      vistoriaValidade: data.vistoriaFeita ? data.vistoriaValidade || undefined : undefined,
     });
   });
 
@@ -229,6 +274,39 @@ export const returnRentalFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { returnRentalHandler } = await import("./store.handlers.server");
     return returnRentalHandler(data);
+  });
+
+export const createFinanceEntryFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      data: dateSchema,
+      descricao: z.string().trim().min(1).max(500),
+      valor: z.number().positive(),
+      moeda: currencySchema,
+      tipo: z.enum(["entrada", "despesa"]),
+      categoria: z.enum([
+        "aluguel",
+        "taxa",
+        "manutencao",
+        "aquisicao",
+        "seguro",
+        "vistoria",
+        "operacional",
+        "outro",
+      ]),
+      veiculoId: z.string().min(1).max(36).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { createFinanceEntryHandler } = await import("./store.handlers.server");
+    return createFinanceEntryHandler(data);
+  });
+
+export const deleteFinanceEntryFn = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string().min(1).max(36) }))
+  .handler(async ({ data }) => {
+    const { deleteFinanceEntryHandler } = await import("./store.handlers.server");
+    return deleteFinanceEntryHandler(data);
   });
 
 export const createActivityLogFn = createServerFn({ method: "POST" })
