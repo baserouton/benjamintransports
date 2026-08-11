@@ -19,6 +19,7 @@ export type {
   Store,
   UserAccount,
   Vehicle,
+  VehicleCategory,
   VehiclePayback,
 } from "@/domain/models";
 export { calcVehiclePayback, fmtMoney } from "@/domain/models";

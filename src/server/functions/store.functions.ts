@@ -62,7 +62,7 @@ export const createVehicleFn = createServerFn({ method: "POST" })
     z.object({
       modelo: z.string().trim().min(1).max(160),
       placa: z.string().trim().min(1).max(32),
-      categoria: z.enum(["VANS", "CARROS", "PARTICULAR", "PICAPE"]),
+      categoria: z.string().trim().min(1).max(80),
       fotos: z.array(z.string().max(500)).max(20).default([]),
       ano: z.number().int().min(1900).max(2200).optional(),
       disponivel: z.boolean().default(true),
@@ -83,7 +83,7 @@ export const updateVehicleFn = createServerFn({ method: "POST" })
       id: z.string().min(1).max(36),
       modelo: z.string().trim().min(1).max(160),
       placa: z.string().trim().min(1).max(32),
-      categoria: z.enum(["VANS", "CARROS", "PARTICULAR", "PICAPE"]),
+      categoria: z.string().trim().min(1).max(80),
       ano: z.number().int().min(1900).max(2200).optional(),
       seguroValidade: dateSchema.optional().or(z.literal("")),
       custoAquisicao: z.number().positive().optional(),
@@ -97,6 +97,25 @@ export const updateVehicleFn = createServerFn({ method: "POST" })
       ...data,
       seguroValidade: data.seguroValidade || undefined,
     });
+  });
+
+export const createVehicleCategoryFn = createServerFn({ method: "POST" })
+  .validator(z.object({ nome: z.string().trim().min(1).max(80) }))
+  .handler(async ({ data }) => {
+    const { createVehicleCategoryHandler } = await import("./store.handlers.server");
+    return createVehicleCategoryHandler(data);
+  });
+
+export const updateVehicleCategoryFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      id: z.string().min(1).max(36),
+      nome: z.string().trim().min(1).max(80),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateVehicleCategoryHandler } = await import("./store.handlers.server");
+    return updateVehicleCategoryHandler(data);
   });
 
 export const hideVehicleFn = createServerFn({ method: "POST" })

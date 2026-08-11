@@ -8,6 +8,7 @@ import type {
   Rental,
   Store,
   Vehicle,
+  VehicleCategory,
 } from "@/domain/models";
 import { db } from "@/server/db/client.server";
 import {
@@ -17,6 +18,7 @@ import {
   maintenance,
   rentals,
   users,
+  vehicleCategories,
   vehicles,
 } from "@/server/db/schema";
 
@@ -26,9 +28,18 @@ const formatDateTime = (value: Date | string) =>
     : value.toISOString().replace("T", " ").slice(0, 19);
 
 export async function findStore(): Promise<Store> {
-  const [vehicleRows, clientRows, rentalRows, maintenanceRows, financeRows, userRows, logRows] =
-    await Promise.all([
+  const [
+    vehicleRows,
+    categoryRows,
+    clientRows,
+    rentalRows,
+    maintenanceRows,
+    financeRows,
+    userRows,
+    logRows,
+  ] = await Promise.all([
       db.select().from(vehicles).orderBy(vehicles.modelo),
+      db.select().from(vehicleCategories).orderBy(vehicleCategories.nome),
       db.select().from(clients).orderBy(clients.nome),
       db.select().from(rentals).orderBy(desc(rentals.dataRetirada)),
       db.select().from(maintenance).orderBy(desc(maintenance.data)),
@@ -54,6 +65,7 @@ export async function findStore(): Promise<Store> {
       custoAquisicao: row.custoAquisicao ?? undefined,
       moedaAquisicao: row.moedaAquisicao ?? undefined,
     })),
+    vehicleCategories: categoryRows.map(({ createdAt: _c, updatedAt: _u, ...row }) => row),
     clients: clientRows.map(({ createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({
       ...row,
       email: row.email ?? undefined,
@@ -107,6 +119,17 @@ export async function findActiveUser(login: string) {
   return user?.ativo ? user : null;
 }
 
+export async function assertVehicleCategoryExists(nome: string) {
+  const normalized = nome.trim();
+  const [row] = await db
+    .select({ id: vehicleCategories.id })
+    .from(vehicleCategories)
+    .where(eq(vehicleCategories.nome, normalized))
+    .limit(1);
+  if (!row) throw new Error("Categoria não encontrada. Cadastre a categoria antes.");
+  return normalized;
+}
+
 export async function insertVehicle(input: Omit<Vehicle, "id">) {
   const id = randomUUID();
   await db.insert(vehicles).values({
@@ -116,6 +139,52 @@ export async function insertVehicle(input: Omit<Vehicle, "id">) {
     oculto: input.oculto ?? false,
   });
   return id;
+}
+
+export async function insertVehicleCategory(nome: string) {
+  const normalized = nome.trim();
+  if (!normalized) throw new Error("Informe o nome da categoria");
+  const id = randomUUID();
+  try {
+    await db.insert(vehicleCategories).values({ id, nome: normalized, ativo: true });
+  } catch {
+    throw new Error("Já existe uma categoria com esse nome");
+  }
+  return { id, nome: normalized, ativo: true } satisfies VehicleCategory;
+}
+
+export async function updateVehicleCategory(id: string, nome: string) {
+  const normalized = nome.trim();
+  if (!normalized) throw new Error("Informe o nome da categoria");
+
+  const [current] = await db
+    .select()
+    .from(vehicleCategories)
+    .where(eq(vehicleCategories.id, id))
+    .limit(1);
+  if (!current) throw new Error("Categoria não encontrada");
+
+  if (current.nome !== normalized) {
+    const [dup] = await db
+      .select({ id: vehicleCategories.id })
+      .from(vehicleCategories)
+      .where(eq(vehicleCategories.nome, normalized))
+      .limit(1);
+    if (dup) throw new Error("Já existe uma categoria com esse nome");
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(vehicleCategories)
+        .set({ nome: normalized })
+        .where(eq(vehicleCategories.id, id));
+      await tx
+        .update(vehicles)
+        .set({ categoria: normalized })
+        .where(eq(vehicles.categoria, current.nome));
+    });
+  }
+
+  return { id, nome: normalized, ativo: current.ativo } satisfies VehicleCategory;
 }
 
 export type VehicleUpdateInput = {

@@ -37,7 +37,6 @@ export const Route = createFileRoute("/veiculos/")({
 });
 
 type StatusFilter = "all" | "available" | "rented";
-const CATS: Array<Category | "TODOS"> = ["TODOS", "VANS", "CARROS", "PARTICULAR", "PICAPE"];
 
 function VehiclesList() {
   const { t, lang } = useI18n();
@@ -50,6 +49,17 @@ function VehiclesList() {
     () => s.vehicles.filter((v) => !v.oculto),
     [s.vehicles],
   );
+
+  const categoryOptions = useMemo(() => {
+    const fromStore = s.vehicleCategories
+      .filter((c) => c.ativo)
+      .map((c) => c.nome)
+      .sort((a, b) => a.localeCompare(b));
+    const extras = visibleVehicles
+      .map((v) => v.categoria)
+      .filter((nome) => nome && !fromStore.includes(nome));
+    return ["TODOS" as const, ...fromStore, ...Array.from(new Set(extras))];
+  }, [s.vehicleCategories, visibleVehicles]);
 
   const stats = useMemo(() => {
     const total = visibleVehicles.length;
@@ -69,20 +79,21 @@ function VehiclesList() {
   }, [visibleVehicles]);
 
   const categoryBreakdown = useMemo(() => {
-    const rows: Array<{ cat: Category; total: number; rented: number }> = [
-      { cat: "VANS", total: 0, rented: 0 },
-      { cat: "CARROS", total: 0, rented: 0 },
-      { cat: "PARTICULAR", total: 0, rented: 0 },
-      { cat: "PICAPE", total: 0, rented: 0 },
-    ];
+    const map = new Map<Category, { cat: Category; total: number; rented: number }>();
+    for (const c of s.vehicleCategories.filter((x) => x.ativo)) {
+      map.set(c.nome, { cat: c.nome, total: 0, rented: 0 });
+    }
     for (const v of visibleVehicles) {
-      const r = rows.find((x) => x.cat === v.categoria);
-      if (!r) continue;
+      let r = map.get(v.categoria);
+      if (!r) {
+        r = { cat: v.categoria, total: 0, rented: 0 };
+        map.set(v.categoria, r);
+      }
       r.total += 1;
       if (!v.disponivel) r.rented += 1;
     }
-    return rows;
-  }, [visibleVehicles]);
+    return Array.from(map.values()).sort((a, b) => a.cat.localeCompare(b.cat));
+  }, [s.vehicleCategories, visibleVehicles]);
 
   const maxCat = Math.max(1, ...categoryBreakdown.map((r) => r.total));
 
@@ -241,7 +252,7 @@ function VehiclesList() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CATS.map((c) => (
+                {categoryOptions.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c === "TODOS" ? t("all") : c}
                   </SelectItem>

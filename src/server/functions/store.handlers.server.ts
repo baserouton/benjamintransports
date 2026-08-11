@@ -14,8 +14,11 @@ import {
   insertRental,
   insertVehicle,
   returnRental,
+  assertVehicleCategoryExists,
+  insertVehicleCategory,
   setVehicleHidden,
   updateVehicle,
+  updateVehicleCategory,
   type VehicleUpdateInput,
 } from "@/server/repositories/store.repository.server";
 
@@ -62,7 +65,8 @@ export async function storeHandler() {
 
 export async function createVehicleHandler(data: Omit<Vehicle, "id">) {
   const session = await requireSession();
-  const id = await insertVehicle({ ...data, oculto: false });
+  const categoria = await assertVehicleCategoryExists(data.categoria);
+  const id = await insertVehicle({ ...data, categoria, oculto: false });
   await insertActivityLog({
     usuario: session.login,
     acao: `Cadastrou veículo ${data.modelo} (${data.placa})`,
@@ -75,7 +79,8 @@ export async function createVehicleHandler(data: Omit<Vehicle, "id">) {
 export async function updateVehicleHandler(data: { id: string } & VehicleUpdateInput) {
   const session = await requireSession();
   const { id, ...input } = data;
-  await updateVehicle(id, input);
+  const categoria = await assertVehicleCategoryExists(input.categoria);
+  await updateVehicle(id, { ...input, categoria });
   await insertActivityLog({
     usuario: session.login,
     acao: `Atualizou veículo ${input.modelo} (${input.placa})`,
@@ -107,6 +112,30 @@ export async function restoreVehicleHandler(data: { id: string }) {
     detalhes: { id: data.id, oculto: false },
   });
   return { id: data.id };
+}
+
+export async function createVehicleCategoryHandler(data: { nome: string }) {
+  const session = await requireSession();
+  const category = await insertVehicleCategory(data.nome);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Cadastrou categoria de veículo ${category.nome}`,
+    categoria: "veiculo",
+    detalhes: { id: category.id, nome: category.nome },
+  });
+  return category;
+}
+
+export async function updateVehicleCategoryHandler(data: { id: string; nome: string }) {
+  const session = await requireSession();
+  const category = await updateVehicleCategory(data.id, data.nome);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Atualizou categoria de veículo para ${category.nome}`,
+    categoria: "veiculo",
+    detalhes: { id: category.id, nome: category.nome },
+  });
+  return category;
 }
 
 export async function uploadVehiclePhotosHandler(data: { images: string[] }) {

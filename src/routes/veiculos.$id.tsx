@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { VehicleCategoryField } from "@/components/vehicle-category-field";
 import { useI18n } from "@/lib/i18n";
 import {
   useStore,
@@ -418,21 +419,12 @@ function VehicleDetail() {
                     onChange={(e) => setForm({ ...form, placa: e.target.value.toUpperCase() })}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>{t("category")}</Label>
-                  <Select
-                    value={form.categoria}
-                    onValueChange={(val) => setForm({ ...form, categoria: val as Category })}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="VANS">VANS</SelectItem>
-                      <SelectItem value="CARROS">CARROS</SelectItem>
-                      <SelectItem value="PARTICULAR">PARTICULAR</SelectItem>
-                      <SelectItem value="PICAPE">PICAPE PARA GARIMPO</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <VehicleCategoryField
+                  label={t("category")}
+                  value={form.categoria}
+                  onChange={(val) => setForm({ ...form, categoria: val })}
+                  categories={s.vehicleCategories}
+                />
                 <div className="space-y-1.5">
                   <Label>Ano</Label>
                   <Input

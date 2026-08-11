@@ -16,13 +16,28 @@ import type { InspectionIn, InspectionOut, JsonValue } from "@/domain/models";
 const id = () => varchar("id", { length: 36 });
 const money = (name: string) => decimal(name, { precision: 14, scale: 2, mode: "number" });
 
+export const vehicleCategories = mysqlTable(
+  "vehicle_categories",
+  {
+    id: id().primaryKey(),
+    nome: varchar("nome", { length: 80 }).notNull(),
+    ativo: boolean("ativo").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => [
+    uniqueIndex("vehicle_categories_nome_unique").on(table.nome),
+    index("vehicle_categories_ativo_idx").on(table.ativo),
+  ],
+);
+
 export const vehicles = mysqlTable(
   "vehicles",
   {
     id: id().primaryKey(),
     modelo: varchar("modelo", { length: 160 }).notNull(),
     placa: varchar("placa", { length: 32 }).notNull(),
-    categoria: mysqlEnum("categoria", ["VANS", "CARROS", "PARTICULAR", "PICAPE"]).notNull(),
+    categoria: varchar("categoria", { length: 80 }).notNull(),
     fotos: json("fotos").$type<string[]>().notNull(),
     ano: int("ano"),
     disponivel: boolean("disponivel").notNull().default(true),

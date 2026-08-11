@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { VehicleCategoryField } from "@/components/vehicle-category-field";
 import { useI18n } from "@/lib/i18n";
-import { notifyStoreChanged, type Category, type Currency } from "@/lib/data-store";
+import { notifyStoreChanged, useStore, type Category, type Currency } from "@/lib/data-store";
 import { createVehicleFn, uploadVehiclePhotosFn } from "@/server/functions/store.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,14 +45,21 @@ function fileToDataUrl(file: File) {
 function NewVehicle() {
   const { t } = useI18n();
   const nav = useNavigate();
+  const s = useStore();
   const [modelo, setModelo] = useState("");
   const [placa, setPlaca] = useState("");
-  const [categoria, setCategoria] = useState<Category>("CARROS");
+  const [categoria, setCategoria] = useState<Category>("");
   const [ano, setAno] = useState<number | "">("");
   const [custoAquisicao, setCustoAquisicao] = useState<number | "">("");
   const [moedaAquisicao, setMoedaAquisicao] = useState<Currency>("SRD");
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (categoria) return;
+    const first = s.vehicleCategories.find((c) => c.ativo)?.nome;
+    if (first) setCategoria(first);
+  }, [categoria, s.vehicleCategories]);
 
   const onFiles = (files: FileList | null) => {
     if (!files) return;
@@ -78,6 +86,10 @@ function NewVehicle() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modelo || !placa) return;
+    if (!categoria) {
+      toast.error("Selecione ou cadastre uma categoria.");
+      return;
+    }
     if (custoAquisicao === "" || Number(custoAquisicao) <= 0) {
       toast.error("Informe o custo de aquisição do veículo.");
       return;
@@ -141,19 +153,13 @@ function NewVehicle() {
                   className="font-mono"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>{t("category")}</Label>
-                <Select value={categoria} onValueChange={(v) => setCategoria(v as Category)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="VANS">VANS</SelectItem>
-                    <SelectItem value="CARROS">CARROS</SelectItem>
-                    <SelectItem value="PARTICULAR">PARTICULAR</SelectItem>
-                    <SelectItem value="PICAPE">PICAPE PARA GARIMPO</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="sm:col-span-2">
+                <VehicleCategoryField
+                  label={t("category")}
+                  value={categoria}
+                  onChange={setCategoria}
+                  categories={s.vehicleCategories}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Ano</Label>

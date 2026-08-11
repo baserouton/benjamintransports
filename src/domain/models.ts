@@ -1,9 +1,16 @@
-export type Category = "VANS" | "CARROS" | "PARTICULAR" | "PICAPE";
+/** Nome da categoria de veículo (dinâmico, cadastrado pelo usuário). */
+export type Category = string;
 export type Currency = "SRD" | "USD" | "EUR";
 export type RentalStatus = "pendente" | "entregue" | "devolvido";
 export type MaintenanceType = "preventiva" | "corretiva";
 export type JsonValue =
   string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
+
+export interface VehicleCategory {
+  id: string;
+  nome: string;
+  ativo: boolean;
+}
 
 export interface Vehicle {
   id: string;
@@ -140,6 +147,7 @@ export interface ActivityLog {
 
 export interface Store {
   vehicles: Vehicle[];
+  vehicleCategories: VehicleCategory[];
   clients: Client[];
   rentals: Rental[];
   maintenance: Maintenance[];
@@ -150,6 +158,7 @@ export interface Store {
 
 export const emptyStore: Store = {
   vehicles: [],
+  vehicleCategories: [],
   clients: [],
   rentals: [],
   maintenance: [],
