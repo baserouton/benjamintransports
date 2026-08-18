@@ -50,6 +50,7 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             npm install --no-audit --no-fund
+            npm run db:migrate
             npm run build
             test -f .output/server/index.mjs
             mkdir -p logs
