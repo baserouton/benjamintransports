@@ -28,9 +28,125 @@ export interface Vehicle {
   /** Vistoria veicular (documento) foi realizada. */
   vistoriaFeita: boolean;
   vistoriaValidade?: string;
+  /** Quilometragem atual do odômetro. */
+  kmAtual?: number;
+  /** Km na última troca de óleo. */
+  kmUltimaTrocaOleo?: number;
+  /** Intervalo de troca de óleo em km (padrão 5000). */
+  intervaloTrocaOleoKm?: number;
   /** Valor pago na compra do veículo (base do payback). */
   custoAquisicao?: number;
   moedaAquisicao?: Currency;
+}
+
+export const DEFAULT_OIL_CHANGE_INTERVAL_KM = 5000;
+export const OIL_CHANGE_ALERT_KM = 300;
+
+export type VehicleOilStatusKind =
+  | "km_pending"
+  | "ok"
+  | "due_soon"
+  | "overdue";
+
+export interface VehicleOilStatus {
+  kind: VehicleOilStatusKind;
+  kmAtual?: number;
+  kmUltimaTrocaOleo?: number;
+  intervaloKm: number;
+  nextChangeKm?: number;
+  remainingKm?: number;
+}
+
+export function getVehicleOilStatus(
+  vehicle: Pick<
+    Vehicle,
+    "kmAtual" | "kmUltimaTrocaOleo" | "intervaloTrocaOleoKm" | "oculto"
+  >,
+): VehicleOilStatus | null {
+  if (vehicle.oculto) return null;
+  const intervalo = vehicle.intervaloTrocaOleoKm ?? DEFAULT_OIL_CHANGE_INTERVAL_KM;
+  if (vehicle.kmAtual == null) {
+    return { kind: "km_pending", intervaloKm: intervalo };
+  }
+  if (vehicle.kmUltimaTrocaOleo == null) {
+    return null;
+  }
+  const nextChangeKm = vehicle.kmUltimaTrocaOleo + intervalo;
+  const remainingKm = nextChangeKm - vehicle.kmAtual;
+  if (remainingKm <= 0) {
+    return {
+      kind: "overdue",
+      kmAtual: vehicle.kmAtual,
+      kmUltimaTrocaOleo: vehicle.kmUltimaTrocaOleo,
+      intervaloKm: intervalo,
+      nextChangeKm,
+      remainingKm,
+    };
+  }
+  if (remainingKm <= OIL_CHANGE_ALERT_KM) {
+    return {
+      kind: "due_soon",
+      kmAtual: vehicle.kmAtual,
+      kmUltimaTrocaOleo: vehicle.kmUltimaTrocaOleo,
+      intervaloKm: intervalo,
+      nextChangeKm,
+      remainingKm,
+    };
+  }
+  return {
+    kind: "ok",
+    kmAtual: vehicle.kmAtual,
+    kmUltimaTrocaOleo: vehicle.kmUltimaTrocaOleo,
+    intervaloKm: intervalo,
+    nextChangeKm,
+    remainingKm,
+  };
+}
+
+export interface VehicleOilAlert {
+  vehicleId: string;
+  modelo: string;
+  placa: string;
+  kind: Exclude<VehicleOilStatusKind, "ok">;
+  remainingKm?: number;
+  nextChangeKm?: number;
+  kmAtual?: number;
+}
+
+export function listVehicleOilAlerts(
+  vehicles: Array<
+    Pick<
+      Vehicle,
+      | "id"
+      | "modelo"
+      | "placa"
+      | "oculto"
+      | "kmAtual"
+      | "kmUltimaTrocaOleo"
+      | "intervaloTrocaOleoKm"
+    >
+  >,
+): VehicleOilAlert[] {
+  const alerts: VehicleOilAlert[] = [];
+  for (const v of vehicles) {
+    const status = getVehicleOilStatus(v);
+    if (!status || status.kind === "ok") continue;
+    alerts.push({
+      vehicleId: v.id,
+      modelo: v.modelo,
+      placa: v.placa,
+      kind: status.kind,
+      remainingKm: status.remainingKm,
+      nextChangeKm: status.nextChangeKm,
+      kmAtual: status.kmAtual,
+    });
+  }
+  const order: Record<VehicleOilAlert["kind"], number> = {
+    overdue: 0,
+    due_soon: 1,
+    km_pending: 2,
+  };
+  return alerts.sort((a, b) => order[a.kind] - order[b.kind] || a.placa.localeCompare(b.placa));
 }
 
 export type ComplianceExpiryKind = "seguro" | "vistoria";
@@ -134,6 +250,10 @@ export interface InspectionOut {
   limpo: boolean;
   semAvarias: boolean;
   obs: string;
+  /** Quilometragem no odômetro no momento da vistoria. */
+  km?: number;
+  /** Foto do painel / odômetro. */
+  kmFotoUrl?: string;
 }
 
 export interface InspectionIn extends InspectionOut {

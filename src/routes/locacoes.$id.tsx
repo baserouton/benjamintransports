@@ -7,6 +7,7 @@ import { useStore, notifyStoreChanged, fmtMoney, logAction } from "@/lib/data-st
 import {
   deliverRentalFn,
   returnRentalFn,
+  uploadVehiclePhotosFn,
 } from "@/server/functions/store.functions";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,9 +28,19 @@ import {
   Wrench,
   ShieldCheck,
   Wallet,
-  ArrowRight,
+  Upload,
+  X,
 } from "lucide-react";
 import { generateContractPDF } from "@/lib/pdf";
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Falha ao ler a imagem"));
+    reader.readAsDataURL(file);
+  });
+}
 
 export const Route = createFileRoute("/locacoes/$id")({
   head: () => ({
@@ -53,7 +64,24 @@ function RentalDetail() {
   const nav = useNavigate();
   const s = useStore();
   const r = s.rentals.find((x) => x.id === id);
-  const [insp, setInsp] = useState({ tanque: false, limpo: false, semAvarias: false, obs: "", taxa: 0 });
+  const [outInsp, setOutInsp] = useState({
+    tanque: false,
+    limpo: false,
+    semAvarias: false,
+    obs: "",
+    km: "" as number | "",
+  });
+  const [outPhoto, setOutPhoto] = useState<{ file: File; preview: string } | null>(null);
+  const [insp, setInsp] = useState({
+    tanque: false,
+    limpo: false,
+    semAvarias: false,
+    obs: "",
+    taxa: 0,
+    km: "" as number | "",
+  });
+  const [inPhoto, setInPhoto] = useState<{ file: File; preview: string } | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -103,22 +131,81 @@ function RentalDetail() {
   const totalCliente = r.valorAluguel + (r.seguroValor ?? 0) + (r.caucaoValor ?? 0);
 
   const markDelivered = async () => {
+    if (outInsp.km === "" || Number(outInsp.km) < 0) {
+      toast.error("Informe a quilometragem atual do odômetro.");
+      return;
+    }
+    if (!outPhoto) {
+      toast.error("Anexe a foto do odômetro na retirada.");
+      return;
+    }
+    setBusy(true);
     try {
-      await deliverRentalFn({ data: { id: r.id } });
+      const image = await fileToDataUrl(outPhoto.file);
+      const uploaded = await uploadVehiclePhotosFn({ data: { images: [image] } });
+      const kmFotoUrl = uploaded.urls[0];
+      if (!kmFotoUrl) throw new Error("Falha no upload da foto do odômetro");
+      await deliverRentalFn({
+        data: {
+          id: r.id,
+          inspection: {
+            tanque: outInsp.tanque,
+            limpo: outInsp.limpo,
+            semAvarias: outInsp.semAvarias,
+            obs: outInsp.obs,
+            km: Number(outInsp.km),
+            kmFotoUrl,
+          },
+        },
+      });
       notifyStoreChanged();
       toast.success(t("delivered"));
-    } catch {
-      toast.error("Não foi possível atualizar a locação");
+      if (outPhoto) URL.revokeObjectURL(outPhoto.preview);
+      setOutPhoto(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar a locação");
+    } finally {
+      setBusy(false);
     }
   };
 
   const closeRental = async () => {
+    if (insp.km === "" || Number(insp.km) < 0) {
+      toast.error("Informe a quilometragem atual do odômetro.");
+      return;
+    }
+    if (!inPhoto) {
+      toast.error("Anexe a foto do odômetro na devolução.");
+      return;
+    }
+    setBusy(true);
     try {
-      await returnRentalFn({ data: { id: r.id, inspection: insp } });
+      const image = await fileToDataUrl(inPhoto.file);
+      const uploaded = await uploadVehiclePhotosFn({ data: { images: [image] } });
+      const kmFotoUrl = uploaded.urls[0];
+      if (!kmFotoUrl) throw new Error("Falha no upload da foto do odômetro");
+      await returnRentalFn({
+        data: {
+          id: r.id,
+          inspection: {
+            tanque: insp.tanque,
+            limpo: insp.limpo,
+            semAvarias: insp.semAvarias,
+            obs: insp.obs,
+            taxa: insp.taxa,
+            km: Number(insp.km),
+            kmFotoUrl,
+          },
+        },
+      });
       notifyStoreChanged();
       toast.success(t("returned"));
-    } catch {
-      toast.error("Não foi possível fechar a locação");
+      if (inPhoto) URL.revokeObjectURL(inPhoto.preview);
+      setInPhoto(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível fechar a locação");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -128,10 +215,11 @@ function RentalDetail() {
   if (r.status === "pendente") {
     nextSteps.push({
       icon: CheckCircle2,
-      text: lang === "pt" ? "Realizar vistoria de retirada e entregar o veículo" : "Voer uitgifte-inspectie uit en lever het voertuig",
+      text:
+        lang === "pt"
+          ? "Preencha a vistoria de retirada com km e foto do odômetro"
+          : "Vul de uitgifte-inspectie in met km en foto van de kilometerteller",
       tone: "primary",
-      action: markDelivered,
-      cta: lang === "pt" ? "Marcar como entregue" : "Markeer als geleverd",
     });
     nextSteps.push({
       icon: FileDown,
@@ -315,7 +403,7 @@ function RentalDetail() {
                     <div className="text-sm">{step.text}</div>
                     {step.action && step.cta && (
                       <Button size="sm" className="mt-2" onClick={step.action}>
-                        {step.cta} <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                        {step.cta}
                       </Button>
                     )}
                   </div>
@@ -370,6 +458,7 @@ function RentalDetail() {
                 title={t("inspectionOut")}
                 date={r.dataRetirada}
                 detail={[
+                  r.vistoriaRetirada.km != null ? `${r.vistoriaRetirada.km.toLocaleString("pt-BR")} km` : null,
                   r.vistoriaRetirada.tanque && t("checklistTank"),
                   r.vistoriaRetirada.limpo && t("checklistClean"),
                   r.vistoriaRetirada.semAvarias && t("checklistDamage"),
@@ -387,7 +476,14 @@ function RentalDetail() {
                 icon={ShieldCheck}
                 title={t("inspectionIn")}
                 date={r.dataSaida}
-                detail={r.vistoriaDevolucao.obs || (lang === "pt" ? "Sem observações" : "Geen opmerkingen")}
+                detail={[
+                  r.vistoriaDevolucao.km != null
+                    ? `${r.vistoriaDevolucao.km.toLocaleString("pt-BR")} km`
+                    : null,
+                  r.vistoriaDevolucao.obs || (lang === "pt" ? "Sem observações" : "Geen opmerkingen"),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               />
             )}
             {r.status === "devolvido" && (
@@ -461,26 +557,147 @@ function RentalDetail() {
         </Card>
       </div>
 
-      {/* Vistoria de devolução */}
-      {r.status !== "devolvido" && (
+      {r.status === "pendente" && (
+        <Card className="p-5 mb-4">
+          <div className="mb-4">
+            <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              {t("inspectionOut")}
+            </div>
+            <div className="text-sm text-muted-foreground mt-0.5">
+              {lang === "pt"
+                ? "Checklist, quilometragem e foto do odômetro para entregar o veículo"
+                : "Checklist, kilometerstand en foto van de teller om het voertuig af te leveren"}
+            </div>
+            {v?.kmAtual != null && (
+              <p className="text-xs text-muted-foreground mt-2">
+                {lang === "pt" ? "Km atual cadastrado" : "Huidige km"}:{" "}
+                <span className="font-mono font-medium text-foreground">
+                  {v.kmAtual.toLocaleString("pt-BR")}
+                </span>
+              </p>
+            )}
+          </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <ChecklistItem
+                label={t("checklistTank")}
+                checked={outInsp.tanque}
+                onChange={(val) => setOutInsp({ ...outInsp, tanque: val })}
+              />
+              <ChecklistItem
+                label={t("checklistClean")}
+                checked={outInsp.limpo}
+                onChange={(val) => setOutInsp({ ...outInsp, limpo: val })}
+              />
+              <ChecklistItem
+                label={t("checklistDamage")}
+                checked={outInsp.semAvarias}
+                onChange={(val) => setOutInsp({ ...outInsp, semAvarias: val })}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>{lang === "pt" ? "Quilometragem (odômetro)" : "Kilometerstand"}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={outInsp.km}
+                  onChange={(e) =>
+                    setOutInsp({
+                      ...outInsp,
+                      km: e.target.value === "" ? "" : Number(e.target.value),
+                    })
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>{t("observation")}</Label>
+                <Textarea
+                  rows={2}
+                  value={outInsp.obs}
+                  onChange={(e) => setOutInsp({ ...outInsp, obs: e.target.value })}
+                />
+              </div>
+            </div>
+            <OdometerPhotoField
+              label={lang === "pt" ? "Foto do odômetro" : "Foto kilometerteller"}
+              photo={outPhoto}
+              onChange={setOutPhoto}
+            />
+            <div className="flex justify-end">
+              <Button onClick={markDelivered} disabled={busy}>
+                {busy
+                  ? lang === "pt"
+                    ? "Salvando..."
+                    : "Opslaan..."
+                  : lang === "pt"
+                    ? "Entregar veículo"
+                    : "Voertuig afleveren"}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {r.status === "entregue" && (
         <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{t("inspectionIn")}</div>
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                {t("inspectionIn")}
+              </div>
               <div className="text-sm text-muted-foreground mt-0.5">
                 {lang === "pt"
-                  ? "Complete a checklist para fechar o ciclo da locação"
-                  : "Vul de checklist in om de cyclus af te sluiten"}
+                  ? "Complete a checklist, km e foto do odômetro para fechar a locação"
+                  : "Vul checklist, km en tellerfoto in om de verhuur af te sluiten"}
               </div>
+              {(r.vistoriaRetirada?.km != null || v?.kmAtual != null) && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {lang === "pt" ? "Km na retirada" : "Km bij uitgifte"}:{" "}
+                  <span className="font-mono font-medium text-foreground">
+                    {(r.vistoriaRetirada?.km ?? v?.kmAtual)?.toLocaleString("pt-BR")}
+                  </span>
+                </p>
+              )}
             </div>
           </div>
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <ChecklistItem label={t("checklistTank")} checked={insp.tanque} onChange={(v) => setInsp({ ...insp, tanque: v })} />
-              <ChecklistItem label={t("checklistClean")} checked={insp.limpo} onChange={(v) => setInsp({ ...insp, limpo: v })} />
-              <ChecklistItem label={t("checklistDamage")} checked={insp.semAvarias} onChange={(v) => setInsp({ ...insp, semAvarias: v })} />
+              <ChecklistItem
+                label={t("checklistTank")}
+                checked={insp.tanque}
+                onChange={(val) => setInsp({ ...insp, tanque: val })}
+              />
+              <ChecklistItem
+                label={t("checklistClean")}
+                checked={insp.limpo}
+                onChange={(val) => setInsp({ ...insp, limpo: val })}
+              />
+              <ChecklistItem
+                label={t("checklistDamage")}
+                checked={insp.semAvarias}
+                onChange={(val) => setInsp({ ...insp, semAvarias: val })}
+              />
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>{lang === "pt" ? "Quilometragem (odômetro)" : "Kilometerstand"}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={insp.km}
+                  onChange={(e) =>
+                    setInsp({
+                      ...insp,
+                      km: e.target.value === "" ? "" : Number(e.target.value),
+                    })
+                  }
+                  required
+                />
+              </div>
               <div className="space-y-1.5">
                 <Label>{t("nonComplianceFee")}</Label>
                 <Input
@@ -490,18 +707,87 @@ function RentalDetail() {
                   onChange={(e) => setInsp({ ...insp, taxa: Number(e.target.value) })}
                 />
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="space-y-1.5">
                 <Label>{t("observation")}</Label>
-                <Textarea rows={2} value={insp.obs} onChange={(e) => setInsp({ ...insp, obs: e.target.value })} />
+                <Textarea
+                  rows={2}
+                  value={insp.obs}
+                  onChange={(e) => setInsp({ ...insp, obs: e.target.value })}
+                />
               </div>
             </div>
+            <OdometerPhotoField
+              label={lang === "pt" ? "Foto do odômetro" : "Foto kilometerteller"}
+              photo={inPhoto}
+              onChange={setInPhoto}
+            />
             <div className="flex justify-end">
-              <Button onClick={closeRental}>
-                {lang === "pt" ? "Fechar locação" : "Verhuur afsluiten"}
+              <Button onClick={closeRental} disabled={busy}>
+                {busy
+                  ? lang === "pt"
+                    ? "Salvando..."
+                    : "Opslaan..."
+                  : lang === "pt"
+                    ? "Fechar locação"
+                    : "Verhuur afsluiten"}
               </Button>
             </div>
           </div>
         </Card>
+      )}
+    </div>
+  );
+}
+
+function OdometerPhotoField({
+  label,
+  photo,
+  onChange,
+}: {
+  label: string;
+  photo: { file: File; preview: string } | null;
+  onChange: (next: { file: File; preview: string } | null) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {photo ? (
+        <div className="relative w-full max-w-xs">
+          <img
+            src={photo.preview}
+            alt=""
+            className="aspect-video w-full object-cover rounded-md border border-border"
+          />
+          <button
+            type="button"
+            className="absolute top-1 right-1 h-6 w-6 rounded-full bg-foreground text-background grid place-items-center"
+            onClick={() => {
+              URL.revokeObjectURL(photo.preview);
+              onChange(null);
+            }}
+            aria-label="Remover foto"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-border p-4 cursor-pointer hover:bg-muted/40 max-w-xs">
+          <Upload className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground text-center">
+            PNG, JPG ou WEBP · foto do painel
+          </span>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file || !file.type.startsWith("image/")) return;
+              onChange({ file, preview: URL.createObjectURL(file) });
+            }}
+          />
+        </label>
       )}
     </div>
   );

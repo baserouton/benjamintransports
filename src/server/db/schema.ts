@@ -51,6 +51,9 @@ export const vehicles = mysqlTable(
     seguroValidade: date("seguro_validade", { mode: "string" }),
     vistoriaFeita: boolean("vistoria_feita").notNull().default(false),
     vistoriaValidade: date("vistoria_validade", { mode: "string" }),
+    kmAtual: int("km_atual"),
+    kmUltimaTrocaOleo: int("km_ultima_troca_oleo"),
+    intervaloTrocaOleoKm: int("intervalo_troca_oleo_km").notNull().default(5000),
     custoAquisicao: money("custo_aquisicao"),
     moedaAquisicao: mysqlEnum("moeda_aquisicao", ["SRD", "USD", "EUR"]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -63,6 +66,7 @@ export const vehicles = mysqlTable(
     index("vehicles_oculto_idx").on(table.oculto),
     index("vehicles_seguro_validade_idx").on(table.seguroValidade),
     index("vehicles_vistoria_validade_idx").on(table.vistoriaValidade),
+    index("vehicles_km_atual_idx").on(table.kmAtual),
   ],
 );
 

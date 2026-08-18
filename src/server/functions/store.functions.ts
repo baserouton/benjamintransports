@@ -72,6 +72,9 @@ export const createVehicleFn = createServerFn({ method: "POST" })
         seguroValidade: dateSchema.optional().or(z.literal("")),
         vistoriaFeita: z.boolean().default(false),
         vistoriaValidade: dateSchema.optional().or(z.literal("")),
+        kmAtual: z.number().int().nonnegative().optional(),
+        kmUltimaTrocaOleo: z.number().int().nonnegative().optional(),
+        intervaloTrocaOleoKm: z.number().int().positive().max(100_000).optional(),
         custoAquisicao: z.number().positive(),
         moedaAquisicao: z.enum(["SRD", "USD", "EUR"]),
       })
@@ -114,6 +117,9 @@ export const updateVehicleFn = createServerFn({ method: "POST" })
         seguroValidade: dateSchema.optional().or(z.literal("")),
         vistoriaFeita: z.boolean(),
         vistoriaValidade: dateSchema.optional().or(z.literal("")),
+        kmAtual: z.number().int().nonnegative().optional(),
+        kmUltimaTrocaOleo: z.number().int().nonnegative().optional(),
+        intervaloTrocaOleoKm: z.number().int().positive().max(100_000).optional(),
         custoAquisicao: z.number().positive().optional(),
         moedaAquisicao: z.enum(["SRD", "USD", "EUR"]).optional(),
         fotos: z.array(z.string().max(500)).max(20).optional(),
@@ -291,7 +297,19 @@ export const createMaintenanceFn = createServerFn({ method: "POST" })
   });
 
 export const deliverRentalFn = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string().min(1).max(36) }))
+  .validator(
+    z.object({
+      id: z.string().min(1).max(36),
+      inspection: z.object({
+        tanque: z.boolean(),
+        limpo: z.boolean(),
+        semAvarias: z.boolean(),
+        obs: z.string().max(2000),
+        km: z.number().int().nonnegative(),
+        kmFotoUrl: z.string().min(1).max(500),
+      }),
+    }),
+  )
   .handler(async ({ data }) => {
     const { deliverRentalHandler } = await import("./store.handlers.server");
     return deliverRentalHandler(data);
@@ -307,6 +325,8 @@ export const returnRentalFn = createServerFn({ method: "POST" })
         semAvarias: z.boolean(),
         obs: z.string().max(2000),
         taxa: z.number().nonnegative(),
+        km: z.number().int().nonnegative(),
+        kmFotoUrl: z.string().min(1).max(500),
       }),
     }),
   )

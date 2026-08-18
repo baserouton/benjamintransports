@@ -14,6 +14,8 @@ import {
   notifyStoreChanged,
   fmtMoney,
   calcVehiclePayback,
+  getVehicleOilStatus,
+  DEFAULT_OIL_CHANGE_INTERVAL_KM,
   type Category,
   type Currency,
 } from "@/lib/data-store";
@@ -59,6 +61,8 @@ import {
   Upload,
   X,
   ShieldAlert,
+  Droplets,
+  Gauge,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -107,6 +111,9 @@ function VehicleDetail() {
     ano: "" as number | "",
     custoAquisicao: "" as number | "",
     moedaAquisicao: "SRD" as Currency,
+    kmAtual: "" as number | "",
+    kmUltimaTrocaOleo: "" as number | "",
+    intervaloTrocaOleoKm: DEFAULT_OIL_CHANGE_INTERVAL_KM as number | "",
   });
   const [compliance, setCompliance] = useState<ComplianceFormValue>({
     seguroFeito: false,
@@ -126,6 +133,9 @@ function VehicleDetail() {
       ano: v.ano ?? "",
       custoAquisicao: v.custoAquisicao ?? "",
       moedaAquisicao: v.moedaAquisicao ?? "SRD",
+      kmAtual: v.kmAtual ?? "",
+      kmUltimaTrocaOleo: v.kmUltimaTrocaOleo ?? "",
+      intervaloTrocaOleoKm: v.intervaloTrocaOleoKm ?? DEFAULT_OIL_CHANGE_INTERVAL_KM,
     });
     setCompliance({
       seguroFeito: v.seguroFeito,
@@ -148,6 +158,9 @@ function VehicleDetail() {
     v?.vistoriaValidade,
     v?.custoAquisicao,
     v?.moedaAquisicao,
+    v?.kmAtual,
+    v?.kmUltimaTrocaOleo,
+    v?.intervaloTrocaOleoKm,
     v?.fotos,
     v?.oculto,
   ]);
@@ -173,6 +186,7 @@ function VehicleDetail() {
   const pendingCompliance: string[] = [];
   if (!v.seguroFeito || !v.seguroValidade) pendingCompliance.push("Seguro");
   if (!v.vistoriaFeita || !v.vistoriaValidade) pendingCompliance.push("Vistoria");
+  const oilStatus = getVehicleOilStatus(v);
 
   const saveEdit = async () => {
     if (!form.modelo.trim() || !form.placa.trim()) {
@@ -206,6 +220,13 @@ function VehicleDetail() {
           custoAquisicao:
             form.custoAquisicao === "" ? undefined : Number(form.custoAquisicao),
           moedaAquisicao: form.moedaAquisicao,
+          kmAtual: form.kmAtual === "" ? undefined : Number(form.kmAtual),
+          kmUltimaTrocaOleo:
+            form.kmUltimaTrocaOleo === "" ? undefined : Number(form.kmUltimaTrocaOleo),
+          intervaloTrocaOleoKm:
+            form.intervaloTrocaOleoKm === ""
+              ? DEFAULT_OIL_CHANGE_INTERVAL_KM
+              : Number(form.intervaloTrocaOleoKm),
           fotos: nextFotos,
         },
       });
@@ -322,6 +343,42 @@ function VehicleDetail() {
             >
               <Pencil className="h-3.5 w-3.5 mr-1" />
               Cadastrar agora
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {oilStatus && oilStatus.kind !== "ok" && !editing && (
+        <Alert className="mb-4">
+          {oilStatus.kind === "km_pending" ? (
+            <Gauge className="h-4 w-4" />
+          ) : (
+            <Droplets className="h-4 w-4" />
+          )}
+          <AlertTitle>
+            {oilStatus.kind === "km_pending"
+              ? "Cadastro de Kilometragem atual pendente"
+              : oilStatus.kind === "overdue"
+                ? "Carro com troca de óleo vencida"
+                : `Faltam ${oilStatus.remainingKm?.toLocaleString("pt-BR")} km para a troca de óleo`}
+          </AlertTitle>
+          <AlertDescription className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p>
+              {oilStatus.kind === "km_pending"
+                ? "Informe o km atual e o km da última troca de óleo para acompanhar a manutenção."
+                : oilStatus.kind === "overdue"
+                  ? `A troca deveria ter sido feita em ${oilStatus.nextChangeKm?.toLocaleString("pt-BR")} km (atual: ${oilStatus.kmAtual?.toLocaleString("pt-BR")} km).`
+                  : `Próxima troca em ${oilStatus.nextChangeKm?.toLocaleString("pt-BR")} km. Alerta a partir de 300 km restantes.`}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-3.5 w-3.5 mr-1" />
+              Atualizar km
             </Button>
           </AlertDescription>
         </Alert>
@@ -532,6 +589,56 @@ function VehicleDetail() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-1.5">
+                  <Label>Km atual</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={form.kmAtual}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        kmAtual: e.target.value === "" ? "" : Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Km última troca de óleo</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={form.kmUltimaTrocaOleo}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        kmUltimaTrocaOleo: e.target.value === "" ? "" : Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Intervalo troca de óleo (km)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={form.intervaloTrocaOleoKm}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        intervaloTrocaOleoKm:
+                          e.target.value === "" ? "" : Number(e.target.value),
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Padrão {DEFAULT_OIL_CHANGE_INTERVAL_KM.toLocaleString("pt-BR")} km. Alerta quando
+                    faltarem 300 km.
+                  </p>
+                </div>
                 <VehicleComplianceFields value={compliance} onChange={setCompliance} />
                 <div className="flex gap-2 pt-2">
                   <Button
@@ -564,6 +671,22 @@ function VehicleDetail() {
                       ? fmtMoney(v.custoAquisicao, v.moedaAquisicao)
                       : "—"
                   }
+                />
+                <Row
+                  k="Km atual"
+                  v={v.kmAtual != null ? `${v.kmAtual.toLocaleString("pt-BR")} km` : "—"}
+                />
+                <Row
+                  k="Última troca de óleo"
+                  v={
+                    v.kmUltimaTrocaOleo != null
+                      ? `${v.kmUltimaTrocaOleo.toLocaleString("pt-BR")} km`
+                      : "—"
+                  }
+                />
+                <Row
+                  k="Intervalo óleo"
+                  v={`${(v.intervaloTrocaOleoKm ?? DEFAULT_OIL_CHANGE_INTERVAL_KM).toLocaleString("pt-BR")} km`}
                 />
                 <Row
                   k={t("status")}

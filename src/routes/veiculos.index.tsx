@@ -1,6 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Plus, Search, Car, ShieldAlert, ShieldCheck, TrendingUp, ClipboardCheck } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Car,
+  ShieldAlert,
+  ShieldCheck,
+  TrendingUp,
+  ClipboardCheck,
+  Droplets,
+  Gauge,
+} from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -8,7 +18,9 @@ import {
   calcVehiclePayback,
   fmtMoney,
   getComplianceExpiry,
+  getVehicleOilStatus,
   listVehicleComplianceAlerts,
+  listVehicleOilAlerts,
   type Category,
 } from "@/lib/data-store";
 import { Button } from "@/components/ui/button";
@@ -72,6 +84,8 @@ function VehiclesList() {
     () => listVehicleComplianceAlerts(visibleVehicles),
     [visibleVehicles],
   );
+
+  const oilAlerts = useMemo(() => listVehicleOilAlerts(visibleVehicles), [visibleVehicles]);
 
   const stats = useMemo(() => {
     const total = visibleVehicles.length;
@@ -256,6 +270,74 @@ function VehiclesList() {
         </Card>
       )}
 
+      {oilAlerts.length > 0 && (
+        <Card className="rounded-2xl overflow-hidden border-foreground/20">
+          <div className="p-5 border-b border-border bg-muted/40 flex items-start gap-3">
+            <Droplets className="h-5 w-5 mt-0.5 shrink-0" />
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-wider">
+                {lang === "pt"
+                  ? "Atenção: quilometragem e troca de óleo"
+                  : "Let op: kilometerstand en olieverversing"}
+              </h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                {lang === "pt"
+                  ? "Alerta com 300 km restantes · troca vencida · km atual não cadastrado."
+                  : "Waarschuwing bij 300 km resterend · olie verlopen · km niet geregistreerd."}
+              </p>
+            </div>
+          </div>
+          <div className="divide-y divide-border">
+            {oilAlerts.map((alert) => (
+              <Link
+                key={`${alert.vehicleId}-${alert.kind}`}
+                to="/veiculos/$id"
+                params={{ id: alert.vehicleId }}
+                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 hover:bg-muted/40 transition-colors"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">
+                    {alert.modelo}{" "}
+                    <span className="font-mono text-xs text-muted-foreground">{alert.placa}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1.5">
+                    {alert.kind === "km_pending" ? (
+                      <Gauge className="h-3.5 w-3.5" />
+                    ) : (
+                      <Droplets className="h-3.5 w-3.5" />
+                    )}
+                    {alert.kind === "km_pending"
+                      ? lang === "pt"
+                        ? "Cadastro de Kilometragem atual pendente"
+                        : "Registratie huidige kilometerstand openstaand"
+                      : alert.kind === "overdue"
+                        ? lang === "pt"
+                          ? "Carro com troca de óleo vencida"
+                          : "Auto met verlopen olieverversing"
+                        : lang === "pt"
+                          ? `Faltam ${alert.remainingKm?.toLocaleString("pt-BR")} km para a troca de óleo`
+                          : `Nog ${alert.remainingKm?.toLocaleString("nl-NL")} km tot olieverversing`}
+                  </div>
+                </div>
+                <Badge variant={alert.kind === "overdue" || alert.kind === "km_pending" ? "default" : "outline"}>
+                  {alert.kind === "km_pending"
+                    ? lang === "pt"
+                      ? "Km pendente"
+                      : "Km open"
+                    : alert.kind === "overdue"
+                      ? lang === "pt"
+                        ? "Óleo vencido"
+                        : "Olie verlopen"
+                      : lang === "pt"
+                        ? "≤ 300 km"
+                        : "≤ 300 km"}
+                </Badge>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Category breakdown */}
       <Card className="rounded-2xl overflow-hidden">
         <div className="p-6 border-b border-border flex items-center justify-between">
@@ -342,6 +424,7 @@ function VehiclesList() {
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("status")}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{lang === "pt" ? "Seguro" : "Verzekering"}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{lang === "pt" ? "Vistoria" : "Keuring"}</TableHead>
+                <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{lang === "pt" ? "Óleo / km" : "Olie / km"}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{t("payback")}</TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">{t("view")}</TableHead>
               </TableRow>
@@ -349,7 +432,7 @@ function VehiclesList() {
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-10">
                     {t("noRecords")}
                   </TableCell>
                 </TableRow>
@@ -362,6 +445,7 @@ function VehiclesList() {
                 const vistoriaStatus = v.vistoriaFeita
                   ? getComplianceExpiry(v.vistoriaValidade)
                   : null;
+                const oilStatus = getVehicleOilStatus(v);
                 return (
                   <TableRow key={v.id}>
                     <TableCell className="font-medium">
@@ -428,6 +512,29 @@ function VehiclesList() {
                               · {lang === "pt" ? "próximo" : "binnenkort"}
                             </span>
                           )}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {!oilStatus || oilStatus.kind === "ok" ? (
+                        <span className="text-muted-foreground">
+                          {v.kmAtual != null
+                            ? `${v.kmAtual.toLocaleString("pt-BR")} km`
+                            : "—"}
+                        </span>
+                      ) : oilStatus.kind === "km_pending" ? (
+                        <span className="font-semibold">
+                          {lang === "pt" ? "Km pendente" : "Km open"}
+                        </span>
+                      ) : oilStatus.kind === "overdue" ? (
+                        <span className="font-semibold">
+                          {lang === "pt" ? "Óleo vencido" : "Olie verlopen"}
+                        </span>
+                      ) : (
+                        <span className="font-semibold">
+                          {lang === "pt"
+                            ? `Faltam ${oilStatus.remainingKm?.toLocaleString("pt-BR")} km`
+                            : `Nog ${oilStatus.remainingKm?.toLocaleString("nl-NL")} km`}
                         </span>
                       )}
                     </TableCell>

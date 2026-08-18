@@ -2,6 +2,7 @@ import type {
   Client,
   FinanceEntry,
   InspectionIn,
+  InspectionOut,
   Maintenance,
   Rental,
   TransferService,
@@ -237,12 +238,15 @@ export async function createMaintenanceHandler(data: Omit<Maintenance, "id">) {
   return { id };
 }
 
-export async function deliverRentalHandler(data: { id: string }) {
+export async function deliverRentalHandler(data: {
+  id: string;
+  inspection: InspectionOut;
+}) {
   const session = await requireSession();
-  await deliverRental(data.id);
+  await deliverRental(data.id, data.inspection);
   await insertActivityLog({
     usuario: session.login,
-    acao: `Marcou locação ${data.id.slice(0, 6)} como entregue`,
+    acao: `Marcou locação ${data.id.slice(0, 6)} como entregue (km ${data.inspection.km})`,
     categoria: "locacao",
   });
   return { ok: true };

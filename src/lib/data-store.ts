@@ -24,17 +24,23 @@ export type {
   Vehicle,
   VehicleCategory,
   VehicleComplianceAlert,
+  VehicleOilAlert,
+  VehicleOilStatus,
   VehiclePayback,
 } from "@/domain/models";
 export {
+  DEFAULT_OIL_CHANGE_INTERVAL_KM,
   FINANCE_CATEGORIES,
   FINANCE_CATEGORY_LABELS,
+  OIL_CHANGE_ALERT_KM,
   TRANSFER_SERVICE_TYPES,
   TRANSFER_SERVICE_TYPE_LABELS,
   calcVehiclePayback,
   fmtMoney,
   getComplianceExpiry,
+  getVehicleOilStatus,
   listVehicleComplianceAlerts,
+  listVehicleOilAlerts,
 } from "@/domain/models";
 
 export const STORE_QUERY_KEY = ["store"] as const;

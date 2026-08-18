@@ -9,7 +9,7 @@ import {
   type ComplianceFormValue,
 } from "@/components/vehicle-compliance-fields";
 import { useI18n } from "@/lib/i18n";
-import { notifyStoreChanged, useStore, type Category, type Currency } from "@/lib/data-store";
+import { notifyStoreChanged, useStore, DEFAULT_OIL_CHANGE_INTERVAL_KM, type Category, type Currency } from "@/lib/data-store";
 import { createVehicleFn, uploadVehiclePhotosFn } from "@/server/functions/store.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +57,11 @@ function NewVehicle() {
   const [ano, setAno] = useState<number | "">("");
   const [custoAquisicao, setCustoAquisicao] = useState<number | "">("");
   const [moedaAquisicao, setMoedaAquisicao] = useState<Currency>("SRD");
+  const [kmAtual, setKmAtual] = useState<number | "">("");
+  const [kmUltimaTrocaOleo, setKmUltimaTrocaOleo] = useState<number | "">("");
+  const [intervaloTrocaOleoKm, setIntervaloTrocaOleoKm] = useState<number | "">(
+    DEFAULT_OIL_CHANGE_INTERVAL_KM,
+  );
   const [compliance, setCompliance] = useState<ComplianceFormValue>({
     seguroFeito: false,
     seguroValidade: "",
@@ -129,6 +134,13 @@ function NewVehicle() {
           disponivel: true,
           custoAquisicao: Number(custoAquisicao),
           moedaAquisicao,
+          kmAtual: kmAtual === "" ? undefined : Number(kmAtual),
+          kmUltimaTrocaOleo:
+            kmUltimaTrocaOleo === "" ? undefined : Number(kmUltimaTrocaOleo),
+          intervaloTrocaOleoKm:
+            intervaloTrocaOleoKm === ""
+              ? DEFAULT_OIL_CHANGE_INTERVAL_KM
+              : Number(intervaloTrocaOleoKm),
           seguroFeito: compliance.seguroFeito,
           seguroValidade: compliance.seguroValidade || undefined,
           vistoriaFeita: compliance.vistoriaFeita,
@@ -221,6 +233,46 @@ function NewVehicle() {
                     <SelectItem value="EUR">EUR</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Km atual</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={kmAtual}
+                  onChange={(e) => setKmAtual(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder="Ex.: 45200"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Km última troca de óleo</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={kmUltimaTrocaOleo}
+                  onChange={(e) =>
+                    setKmUltimaTrocaOleo(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  placeholder="Ex.: 40000"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Intervalo troca de óleo (km)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={intervaloTrocaOleoKm}
+                  onChange={(e) =>
+                    setIntervaloTrocaOleoKm(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Padrão {DEFAULT_OIL_CHANGE_INTERVAL_KM.toLocaleString("pt-BR")} km. Alerta quando
+                  faltarem 300 km para a troca.
+                </p>
               </div>
               <VehicleComplianceFields value={compliance} onChange={setCompliance} />
             </div>

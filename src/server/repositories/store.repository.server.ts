@@ -7,6 +7,7 @@ import {
   type FinanceCategory,
   type FinanceEntry,
   type InspectionIn,
+  type InspectionOut,
   type Maintenance,
   type Rental,
   type Store,
@@ -72,6 +73,9 @@ export async function findStore(): Promise<Store> {
       seguroValidade: row.seguroValidade ?? undefined,
       vistoriaFeita: Boolean(row.vistoriaFeita),
       vistoriaValidade: row.vistoriaValidade ?? undefined,
+      kmAtual: row.kmAtual ?? undefined,
+      kmUltimaTrocaOleo: row.kmUltimaTrocaOleo ?? undefined,
+      intervaloTrocaOleoKm: row.intervaloTrocaOleoKm ?? undefined,
       custoAquisicao: row.custoAquisicao ?? undefined,
       moedaAquisicao: row.moedaAquisicao ?? undefined,
     })),
@@ -155,13 +159,22 @@ export async function insertVehicle(input: Omit<Vehicle, "id">) {
   await db.transaction(async (tx) => {
     await tx.insert(vehicles).values({
       id,
-      ...input,
+      modelo: input.modelo,
+      placa: input.placa,
+      categoria: input.categoria,
       fotos: input.fotos ?? [],
+      ano: input.ano ?? null,
+      disponivel: input.disponivel ?? true,
       oculto: input.oculto ?? false,
       seguroFeito,
       seguroValidade: seguroFeito ? (input.seguroValidade ?? null) : null,
       vistoriaFeita,
       vistoriaValidade: vistoriaFeita ? (input.vistoriaValidade ?? null) : null,
+      kmAtual: input.kmAtual ?? null,
+      kmUltimaTrocaOleo: input.kmUltimaTrocaOleo ?? null,
+      intervaloTrocaOleoKm: input.intervaloTrocaOleoKm ?? 5000,
+      custoAquisicao: input.custoAquisicao ?? null,
+      moedaAquisicao: input.moedaAquisicao ?? null,
     });
     if (input.custoAquisicao != null && input.custoAquisicao > 0) {
       await tx.insert(financeEntries).values({
@@ -284,6 +297,9 @@ export type VehicleUpdateInput = {
   seguroValidade?: string;
   vistoriaFeita: boolean;
   vistoriaValidade?: string;
+  kmAtual?: number;
+  kmUltimaTrocaOleo?: number;
+  intervaloTrocaOleoKm?: number;
   custoAquisicao?: number;
   moedaAquisicao?: Vehicle["moedaAquisicao"];
   fotos?: string[];
@@ -302,6 +318,9 @@ export async function updateVehicle(id: string, input: VehicleUpdateInput) {
         seguroValidade: input.seguroFeito ? (input.seguroValidade ?? null) : null,
         vistoriaFeita: input.vistoriaFeita,
         vistoriaValidade: input.vistoriaFeita ? (input.vistoriaValidade ?? null) : null,
+        kmAtual: input.kmAtual ?? null,
+        kmUltimaTrocaOleo: input.kmUltimaTrocaOleo ?? null,
+        intervaloTrocaOleoKm: input.intervaloTrocaOleoKm ?? 5000,
         custoAquisicao: input.custoAquisicao ?? null,
         moedaAquisicao: input.moedaAquisicao ?? null,
         ...(input.fotos ? { fotos: input.fotos } : {}),
@@ -475,23 +494,66 @@ export async function insertMaintenance(input: Omit<Maintenance, "id">) {
   return id;
 }
 
-export async function deliverRental(id: string) {
+export async function deliverRental(id: string, inspection: InspectionOut) {
+  if (inspection.km == null || Number.isNaN(inspection.km) || inspection.km < 0) {
+    throw new Error("Informe a quilometragem da retirada");
+  }
+  if (!inspection.kmFotoUrl?.trim()) {
+    throw new Error("Anexe a foto do odômetro na retirada");
+  }
   await db.transaction(async (tx) => {
     const [rental] = await tx
-      .select({ veiculoId: rentals.veiculoId })
+      .select({
+        veiculoId: rentals.veiculoId,
+        status: rentals.status,
+      })
       .from(rentals)
       .where(eq(rentals.id, id))
       .limit(1);
     if (!rental) throw new Error("Locação não encontrada");
-    await tx.update(rentals).set({ status: "entregue" }).where(eq(rentals.id, id));
-    await tx.update(vehicles).set({ disponivel: false }).where(eq(vehicles.id, rental.veiculoId));
+    if (rental.status !== "pendente") throw new Error("Locação já foi entregue ou devolvida");
+
+    const [vehicle] = await tx
+      .select({ kmAtual: vehicles.kmAtual })
+      .from(vehicles)
+      .where(eq(vehicles.id, rental.veiculoId))
+      .limit(1);
+    if (vehicle?.kmAtual != null && inspection.km < vehicle.kmAtual) {
+      throw new Error(
+        `Km da retirada (${inspection.km}) não pode ser menor que o km atual do veículo (${vehicle.kmAtual})`,
+      );
+    }
+
+    await tx
+      .update(rentals)
+      .set({ status: "entregue", vistoriaRetirada: inspection })
+      .where(eq(rentals.id, id));
+    await tx
+      .update(vehicles)
+      .set({ disponivel: false, kmAtual: inspection.km })
+      .where(eq(vehicles.id, rental.veiculoId));
   });
 }
 
 export async function returnRental(id: string, inspection: InspectionIn) {
+  if (inspection.km == null || Number.isNaN(inspection.km) || inspection.km < 0) {
+    throw new Error("Informe a quilometragem da devolução");
+  }
+  if (!inspection.kmFotoUrl?.trim()) {
+    throw new Error("Anexe a foto do odômetro na devolução");
+  }
   await db.transaction(async (tx) => {
     const [rental] = await tx.select().from(rentals).where(eq(rentals.id, id)).limit(1);
     if (!rental) throw new Error("Locação não encontrada");
+    if (rental.status !== "entregue") throw new Error("Locação precisa estar entregue para devolução");
+
+    const outKm = rental.vistoriaRetirada?.km;
+    if (outKm != null && inspection.km < outKm) {
+      throw new Error(
+        `Km da devolução (${inspection.km}) não pode ser menor que o km da retirada (${outKm})`,
+      );
+    }
+
     await tx
       .update(rentals)
       .set({
@@ -501,7 +563,10 @@ export async function returnRental(id: string, inspection: InspectionIn) {
           inspection.semAvarias && rental.caucaoValor ? "devolvido" : rental.caucaoStatus,
       })
       .where(eq(rentals.id, id));
-    await tx.update(vehicles).set({ disponivel: true }).where(eq(vehicles.id, rental.veiculoId));
+    await tx
+      .update(vehicles)
+      .set({ disponivel: true, kmAtual: inspection.km })
+      .where(eq(vehicles.id, rental.veiculoId));
     if (inspection.taxa > 0) {
       const [vehicle] = await tx
         .select({ placa: vehicles.placa })
