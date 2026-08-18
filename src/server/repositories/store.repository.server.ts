@@ -106,6 +106,8 @@ export async function findStore(): Promise<Store> {
       ({ createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({
         ...row,
         obs: row.obs ?? undefined,
+        kmTroca: row.kmTroca ?? undefined,
+        kmProxima: row.kmProxima ?? undefined,
       }),
     ),
     finance: financeRows.map(({ createdAt: _createdAt, ...row }) => ({
@@ -471,8 +473,15 @@ export async function insertMaintenance(input: Omit<Maintenance, "id">) {
   await db.transaction(async (tx) => {
     await tx.insert(maintenance).values({
       id,
-      ...input,
+      veiculoId: input.veiculoId,
+      tipo: input.tipo,
+      pecas: input.pecas,
+      custo: input.custo,
+      moeda: input.moeda,
+      data: input.data,
       obs: input.obs || null,
+      kmTroca: input.kmTroca ?? null,
+      kmProxima: input.kmProxima ?? null,
     });
     const [vehicle] = await tx
       .select({ placa: vehicles.placa })
@@ -483,6 +492,78 @@ export async function insertMaintenance(input: Omit<Maintenance, "id">) {
       id: randomUUID(),
       data: input.data,
       descricao: `Manutenção ${input.tipo} — ${vehicle?.placa ?? ""}`.trim(),
+      valor: input.custo,
+      moeda: input.moeda,
+      tipo: "despesa",
+      categoria: "manutencao",
+      manual: false,
+      veiculoId: input.veiculoId,
+    });
+  });
+  return id;
+}
+
+export type OilChangeInput = {
+  veiculoId: string;
+  kmTroca: number;
+  custo: number;
+  moeda: Maintenance["moeda"];
+  data: string;
+  obs?: string;
+};
+
+export async function registerOilChange(input: OilChangeInput) {
+  if (Number.isNaN(input.kmTroca) || input.kmTroca < 0) {
+    throw new Error("Informe o km da troca de óleo");
+  }
+  const id = randomUUID();
+  await db.transaction(async (tx) => {
+    const [vehicle] = await tx
+      .select({
+        placa: vehicles.placa,
+        modelo: vehicles.modelo,
+        kmAtual: vehicles.kmAtual,
+        intervaloTrocaOleoKm: vehicles.intervaloTrocaOleoKm,
+        oculto: vehicles.oculto,
+      })
+      .from(vehicles)
+      .where(eq(vehicles.id, input.veiculoId))
+      .limit(1);
+    if (!vehicle) throw new Error("Veículo não encontrado");
+    if (vehicle.oculto) throw new Error("Veículo oculto não pode registrar troca de óleo");
+    if (vehicle.kmAtual != null && input.kmTroca < vehicle.kmAtual) {
+      throw new Error(
+        `Km da troca (${input.kmTroca}) não pode ser menor que o km atual (${vehicle.kmAtual})`,
+      );
+    }
+    const intervalo = vehicle.intervaloTrocaOleoKm ?? 5000;
+    const kmProxima = input.kmTroca + intervalo;
+    const nextKmAtual =
+      vehicle.kmAtual == null ? input.kmTroca : Math.max(vehicle.kmAtual, input.kmTroca);
+
+    await tx.insert(maintenance).values({
+      id,
+      veiculoId: input.veiculoId,
+      tipo: "troca_oleo",
+      pecas: "Troca de óleo",
+      custo: input.custo,
+      moeda: input.moeda,
+      data: input.data,
+      obs: input.obs || null,
+      kmTroca: input.kmTroca,
+      kmProxima,
+    });
+    await tx
+      .update(vehicles)
+      .set({
+        kmAtual: nextKmAtual,
+        kmUltimaTrocaOleo: input.kmTroca,
+      })
+      .where(eq(vehicles.id, input.veiculoId));
+    await tx.insert(financeEntries).values({
+      id: randomUUID(),
+      data: input.data,
+      descricao: `Troca de óleo — ${vehicle.placa}`.trim(),
       valor: input.custo,
       moeda: input.moeda,
       tipo: "despesa",

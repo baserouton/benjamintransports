@@ -503,7 +503,17 @@ function RentalDetail() {
                     <div className="flex-1 min-w-0">
                       <div className="truncate">{m.pecas}</div>
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        {m.data} · {m.tipo === "preventiva" ? t("preventive") : t("corrective")}
+                        {m.data} ·{" "}
+                        {m.tipo === "preventiva"
+                          ? t("preventive")
+                          : m.tipo === "troca_oleo"
+                            ? lang === "pt"
+                              ? "Troca de óleo"
+                              : "Olieverversing"
+                            : t("corrective")}
+                        {m.tipo === "troca_oleo" && m.kmTroca != null
+                          ? ` · ${m.kmTroca.toLocaleString("pt-BR")} km`
+                          : ""}
                       </div>
                     </div>
                     <span className="font-mono tabular-nums text-xs">{fmtMoney(m.custo, m.moeda)}</span>

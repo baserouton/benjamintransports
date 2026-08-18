@@ -25,6 +25,7 @@ import {
   insertRental,
   insertTransferService,
   insertVehicle,
+  registerOilChange,
   returnRental,
   assertVehicleCategoryExists,
   deleteVehicleCategory,
@@ -234,6 +235,25 @@ export async function createMaintenanceHandler(data: Omit<Maintenance, "id">) {
     acao: `Registrou manutenção ${data.tipo}`,
     categoria: "manutencao",
     detalhes: { id, veiculoId: data.veiculoId },
+  });
+  return { id };
+}
+
+export async function registerOilChangeHandler(data: {
+  veiculoId: string;
+  kmTroca: number;
+  custo: number;
+  moeda: Maintenance["moeda"];
+  data: string;
+  obs?: string;
+}) {
+  const session = await requireSession();
+  const id = await registerOilChange(data);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Registrou troca de óleo (km ${data.kmTroca})`,
+    categoria: "manutencao",
+    detalhes: { id, veiculoId: data.veiculoId, kmTroca: data.kmTroca },
   });
   return { id };
 }

@@ -733,7 +733,18 @@ function VehicleDetail() {
         <TabsContent value="maint" className="mt-4">
           <SimpleTable
             cols={[t("date"), t("maintenanceType"), t("parts"), t("cost")]}
-            rows={maint.map((m) => [m.data, m.tipo, m.pecas, fmtMoney(m.custo, m.moeda)])}
+            rows={maint.map((m) => [
+              m.data,
+              m.tipo === "troca_oleo"
+                ? "Troca de óleo"
+                : m.tipo === "preventiva"
+                  ? t("preventive")
+                  : t("corrective"),
+              m.tipo === "troca_oleo" && m.kmTroca != null
+                ? `${m.pecas} (${m.kmTroca.toLocaleString("pt-BR")} → ${m.kmProxima?.toLocaleString("pt-BR") ?? "—"} km)`
+                : m.pecas,
+              fmtMoney(m.custo, m.moeda),
+            ])}
           />
         </TabsContent>
         <TabsContent value="fin" className="mt-4">

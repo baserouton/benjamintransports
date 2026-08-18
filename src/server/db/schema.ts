@@ -131,18 +131,21 @@ export const maintenance = mysqlTable(
     veiculoId: varchar("veiculo_id", { length: 36 })
       .notNull()
       .references(() => vehicles.id, { onDelete: "restrict", onUpdate: "cascade" }),
-    tipo: mysqlEnum("tipo", ["preventiva", "corretiva"]).notNull(),
+    tipo: mysqlEnum("tipo", ["preventiva", "corretiva", "troca_oleo"]).notNull(),
     pecas: varchar("pecas", { length: 1000 }).notNull(),
     custo: money("custo").notNull(),
     moeda: mysqlEnum("moeda", ["SRD", "USD", "EUR"]).notNull(),
     data: date("data", { mode: "string" }).notNull(),
     obs: varchar("obs", { length: 2000 }),
+    kmTroca: int("km_troca"),
+    kmProxima: int("km_proxima"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
   (table) => [
     index("maintenance_veiculo_idx").on(table.veiculoId),
     index("maintenance_data_idx").on(table.data),
+    index("maintenance_tipo_idx").on(table.tipo),
   ],
 );
 

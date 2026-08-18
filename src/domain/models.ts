@@ -2,7 +2,7 @@
 export type Category = string;
 export type Currency = "SRD" | "USD" | "EUR";
 export type RentalStatus = "pendente" | "entregue" | "devolvido";
-export type MaintenanceType = "preventiva" | "corretiva";
+export type MaintenanceType = "preventiva" | "corretiva" | "troca_oleo";
 export type JsonValue =
   string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
 
@@ -286,6 +286,10 @@ export interface Maintenance {
   moeda: Currency;
   data: string;
   obs?: string;
+  /** Km no odômetro no momento da troca de óleo. */
+  kmTroca?: number;
+  /** Km previsto para a próxima troca. */
+  kmProxima?: number;
 }
 
 /** Classificação do lançamento no financeiro da empresa. */

@@ -296,6 +296,22 @@ export const createMaintenanceFn = createServerFn({ method: "POST" })
     return createMaintenanceHandler(data);
   });
 
+export const registerOilChangeFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      veiculoId: z.string().min(1).max(36),
+      kmTroca: z.number().int().nonnegative(),
+      custo: z.number().nonnegative(),
+      moeda: currencySchema,
+      data: dateSchema,
+      obs: optionalText(2000),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { registerOilChangeHandler } = await import("./store.handlers.server");
+    return registerOilChangeHandler(data);
+  });
+
 export const deliverRentalFn = createServerFn({ method: "POST" })
   .validator(
     z.object({

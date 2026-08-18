@@ -1,18 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Search, Wrench, ShieldCheck, AlertTriangle, Clock } from "lucide-react";
+import { Plus, Search, Wrench, ShieldCheck, AlertTriangle, Clock, Droplets } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
 import {
   useStore,
   notifyStoreChanged,
   fmtMoney,
-  type MaintenanceType,
+  listVehicleOilAlerts,
+  DEFAULT_OIL_CHANGE_INTERVAL_KM,
   type Currency,
 } from "@/lib/data-store";
 import { useLogger } from "@/lib/current-user";
-import { createMaintenanceFn } from "@/server/functions/store.functions";
+import {
+  createMaintenanceFn,
+  registerOilChangeFn,
+} from "@/server/functions/store.functions";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,7 +47,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-type Tab = "all" | "preventiva" | "corretiva";
+type Tab = "all" | "preventiva" | "corretiva" | "troca_oleo";
 type CurrencyFilter = Currency | "all";
 
 const CURRENCIES: Currency[] = ["SRD", "USD", "EUR"];
@@ -75,14 +79,25 @@ function MaintenancePage() {
   const s = useStore();
   const log = useLogger();
   const [open, setOpen] = useState(false);
+  const [oilOpen, setOilOpen] = useState(false);
+  const [oilSaving, setOilSaving] = useState(false);
   const [tab, setTab] = useState<Tab>("all");
   const [q, setQ] = useState("");
   const [currency, setCurrency] = useState<CurrencyFilter>("all");
 
   const [f, setF] = useState({
     veiculoId: "",
-    tipo: "preventiva" as MaintenanceType,
+    tipo: "preventiva" as "preventiva" | "corretiva",
     pecas: "",
+    custo: 0,
+    moeda: "SRD" as Currency,
+    data: new Date().toISOString().slice(0, 10),
+    obs: "",
+  });
+
+  const [oilForm, setOilForm] = useState({
+    veiculoId: "",
+    kmTroca: "" as number | "",
     custo: 0,
     moeda: "SRD" as Currency,
     data: new Date().toISOString().slice(0, 10),
@@ -106,11 +121,31 @@ function MaintenancePage() {
   const counts = useMemo(() => {
     const preventive = s.maintenance.filter((m) => m.tipo === "preventiva").length;
     const corrective = s.maintenance.filter((m) => m.tipo === "corretiva").length;
-    return { preventive, corrective, total: s.maintenance.length };
+    const oil = s.maintenance.filter((m) => m.tipo === "troca_oleo").length;
+    return { preventive, corrective, oil, total: s.maintenance.length };
   }, [s.maintenance]);
 
+  const oilDueAlerts = useMemo(
+    () =>
+      listVehicleOilAlerts(s.vehicles.filter((v) => !v.oculto)).filter(
+        (a) => a.kind === "due_soon" || a.kind === "overdue",
+      ),
+    [s.vehicles],
+  );
+
+  const oilVehicle = useMemo(
+    () => s.vehicles.find((v) => v.id === oilForm.veiculoId),
+    [s.vehicles, oilForm.veiculoId],
+  );
+
+  const oilKmProxima = useMemo(() => {
+    if (oilForm.kmTroca === "") return null;
+    const intervalo = oilVehicle?.intervaloTrocaOleoKm ?? DEFAULT_OIL_CHANGE_INTERVAL_KM;
+    return Number(oilForm.kmTroca) + intervalo;
+  }, [oilForm.kmTroca, oilVehicle?.intervaloTrocaOleoKm]);
+
   const preventivePct = counts.total
-    ? Math.round((counts.preventive / counts.total) * 100)
+    ? Math.round(((counts.preventive + counts.oil) / counts.total) * 100)
     : 0;
 
   const topVehicles = useMemo(() => {
@@ -191,7 +226,17 @@ function MaintenancePage() {
     }
     const veh = s.vehicles.find((v) => v.id === f.veiculoId);
     try {
-      await createMaintenanceFn({ data: f });
+      await createMaintenanceFn({
+        data: {
+          veiculoId: f.veiculoId,
+          tipo: f.tipo,
+          pecas: f.pecas,
+          custo: f.custo,
+          moeda: f.moeda,
+          data: f.data,
+          obs: f.obs || undefined,
+        },
+      });
       notifyStoreChanged();
       toast.success(t("saved"));
       setOpen(false);
@@ -200,6 +245,63 @@ function MaintenancePage() {
       toast.error(
         `Não foi possível registrar a manutenção de ${veh?.modelo ?? "veículo"}`,
       );
+    }
+  };
+
+  const openOilDialog = (veiculoId?: string) => {
+    const v = veiculoId ? s.vehicles.find((x) => x.id === veiculoId) : undefined;
+    setOilForm({
+      veiculoId: veiculoId ?? "",
+      kmTroca: v?.kmAtual ?? "",
+      custo: 0,
+      moeda: "SRD",
+      data: new Date().toISOString().slice(0, 10),
+      obs: "",
+    });
+    setOilOpen(true);
+    log("Abriu formulário de troca de óleo", {
+      categoria: "manutencao",
+      detalhes: { veiculoId: veiculoId ?? null },
+    });
+  };
+
+  const saveOilChange = async () => {
+    if (!oilForm.veiculoId) {
+      toast.error(lang === "pt" ? "Selecione o veículo." : "Selecteer het voertuig.");
+      return;
+    }
+    if (oilForm.kmTroca === "" || Number(oilForm.kmTroca) < 0) {
+      toast.error(lang === "pt" ? "Informe o km da troca." : "Voer de km van de wissel in.");
+      return;
+    }
+    setOilSaving(true);
+    try {
+      await registerOilChangeFn({
+        data: {
+          veiculoId: oilForm.veiculoId,
+          kmTroca: Number(oilForm.kmTroca),
+          custo: oilForm.custo,
+          moeda: oilForm.moeda,
+          data: oilForm.data,
+          obs: oilForm.obs || undefined,
+        },
+      });
+      notifyStoreChanged();
+      toast.success(
+        lang === "pt" ? "Troca de óleo registrada." : "Olieverversing geregistreerd.",
+      );
+      setOilOpen(false);
+      setTab("troca_oleo");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : lang === "pt"
+            ? "Não foi possível registrar a troca de óleo"
+            : "Olieverversing kon niet worden geregistreerd",
+      );
+    } finally {
+      setOilSaving(false);
     }
   };
 
@@ -233,11 +335,13 @@ function MaintenancePage() {
     all: t("all") as string,
     preventiva: t("preventive") as string,
     corretiva: t("corrective") as string,
+    troca_oleo: lang === "pt" ? "Troca de óleo" : "Olieverversing",
   };
   const tabCount: Record<Tab, number> = {
     all: counts.total,
     preventiva: counts.preventive,
     corretiva: counts.corrective,
+    troca_oleo: counts.oil,
   };
 
   return (
@@ -250,6 +354,11 @@ function MaintenancePage() {
             : "Kostenbeheer en mechanische gezondheid van de vloot"
         }
         actions={
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => openOilDialog()}>
+              <Droplets className="h-4 w-4 mr-1" />
+              {lang === "pt" ? "Troca de óleo" : "Olieverversing"}
+            </Button>
           <Dialog open={open} onOpenChange={openDialog}>
             <DialogTrigger asChild>
               <Button size="sm">
@@ -288,7 +397,9 @@ function MaintenancePage() {
                     <Label>{t("maintenanceType")}</Label>
                     <Select
                       value={f.tipo}
-                      onValueChange={(v) => setF({ ...f, tipo: v as MaintenanceType })}
+                      onValueChange={(v) =>
+                        setF({ ...f, tipo: v as "preventiva" | "corretiva" })
+                      }
                     >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -348,8 +459,155 @@ function MaintenancePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </div>
         }
       />
+
+      <Dialog
+        open={oilOpen}
+        onOpenChange={(v) => {
+          setOilOpen(v);
+          if (!v) {
+            log("Fechou formulário de troca de óleo", { categoria: "manutencao" });
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {lang === "pt" ? "Registrar troca de óleo" : "Olieverversing registreren"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>{lang === "pt" ? "Veículo" : "Voertuig"}</Label>
+              <Select
+                value={oilForm.veiculoId}
+                onValueChange={(id) => {
+                  const v = s.vehicles.find((x) => x.id === id);
+                  setOilForm({
+                    ...oilForm,
+                    veiculoId: id,
+                    kmTroca: v?.kmAtual ?? oilForm.kmTroca,
+                  });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={lang === "pt" ? "Selecionar" : "Selecteren"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {s.vehicles
+                    .filter((v) => !v.oculto)
+                    .map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.modelo} — {v.placa}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{lang === "pt" ? "Troca feita com (km)" : "Wissel gedaan bij (km)"}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={oilForm.kmTroca}
+                  onChange={(e) =>
+                    setOilForm({
+                      ...oilForm,
+                      kmTroca: e.target.value === "" ? "" : Number(e.target.value),
+                    })
+                  }
+                />
+                {oilVehicle?.kmAtual != null && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {lang === "pt" ? "Km atual" : "Huidige km"}:{" "}
+                    {oilVehicle.kmAtual.toLocaleString("pt-BR")}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>{lang === "pt" ? "Próxima troca com (km)" : "Volgende wissel bij (km)"}</Label>
+                <Input
+                  type="text"
+                  readOnly
+                  value={
+                    oilKmProxima != null ? oilKmProxima.toLocaleString("pt-BR") : "—"
+                  }
+                  className="bg-muted"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  +
+                  {(
+                    oilVehicle?.intervaloTrocaOleoKm ?? DEFAULT_OIL_CHANGE_INTERVAL_KM
+                  ).toLocaleString("pt-BR")}{" "}
+                  km
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{t("date")}</Label>
+                <Input
+                  type="date"
+                  value={oilForm.data}
+                  onChange={(e) => setOilForm({ ...oilForm, data: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("cost")}</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={oilForm.custo}
+                  onChange={(e) => setOilForm({ ...oilForm, custo: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("currency")}</Label>
+              <Select
+                value={oilForm.moeda}
+                onValueChange={(v) => setOilForm({ ...oilForm, moeda: v as Currency })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{lang === "pt" ? "Observação" : "Opmerking"}</Label>
+              <Textarea
+                rows={2}
+                value={oilForm.obs}
+                onChange={(e) => setOilForm({ ...oilForm, obs: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOilOpen(false)} disabled={oilSaving}>
+              {t("cancel")}
+            </Button>
+            <Button onClick={saveOilChange} disabled={oilSaving}>
+              {oilSaving
+                ? lang === "pt"
+                  ? "Salvando..."
+                  : "Opslaan..."
+                : t("save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* KPIs */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -381,7 +639,8 @@ function MaintenancePage() {
           </div>
           <div className="mt-4 text-3xl font-extrabold tabular-nums">{counts.total}</div>
           <div className="mt-3 text-[11px] uppercase tracking-wide text-muted-foreground">
-            {counts.preventive} {t("preventive")} · {counts.corrective} {t("corrective")}
+            {counts.preventive} {t("preventive")} · {counts.corrective} {t("corrective")} ·{" "}
+            {counts.oil} {lang === "pt" ? "óleo" : "olie"}
           </div>
         </Card>
 
@@ -429,6 +688,73 @@ function MaintenancePage() {
           </div>
         </Card>
       </div>
+
+      {oilDueAlerts.length > 0 && (
+        <Card className="rounded-2xl overflow-hidden border-foreground/20">
+          <div className="p-5 border-b border-border bg-muted/40 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <Droplets className="h-5 w-5 mt-0.5 shrink-0" />
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-wider">
+                  {lang === "pt"
+                    ? "Troca de óleo — na hora de trocar"
+                    : "Olieverversing — tijd om te wisselen"}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {lang === "pt"
+                    ? "Carros com óleo vencido ou a ≤ 300 km da troca. Registre a troca aqui para atualizar o km em Veículos."
+                    : "Auto's met verlopen olie of ≤ 300 km tot de wissel."}
+                </p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => openOilDialog()}>
+              <Plus className="h-4 w-4 mr-1" />
+              {lang === "pt" ? "Registrar troca" : "Wissel registreren"}
+            </Button>
+          </div>
+          <div className="divide-y divide-border">
+            {oilDueAlerts.map((alert) => (
+              <div
+                key={alert.vehicleId}
+                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">
+                    {alert.modelo}{" "}
+                    <span className="font-mono text-xs text-muted-foreground">{alert.placa}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {alert.kind === "overdue"
+                      ? lang === "pt"
+                        ? "Troca de óleo vencida"
+                        : "Olieverversing verlopen"
+                      : lang === "pt"
+                        ? `Faltam ${alert.remainingKm?.toLocaleString("pt-BR")} km`
+                        : `Nog ${alert.remainingKm?.toLocaleString("nl-NL")} km`}
+                    {alert.nextChangeKm != null && (
+                      <>
+                        {" · "}
+                        {lang === "pt" ? "próxima em" : "volgende bij"}{" "}
+                        {alert.nextChangeKm.toLocaleString("pt-BR")} km
+                      </>
+                    )}
+                    {alert.kmAtual != null && (
+                      <>
+                        {" · "}
+                        {lang === "pt" ? "atual" : "huidig"} {alert.kmAtual.toLocaleString("pt-BR")}{" "}
+                        km
+                      </>
+                    )}
+                  </div>
+                </div>
+                <Button size="sm" onClick={() => openOilDialog(alert.vehicleId)}>
+                  {lang === "pt" ? "Registrar troca" : "Registreren"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Top vehicles + Attention list */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -544,7 +870,7 @@ function MaintenancePage() {
       <Card className="rounded-2xl overflow-hidden">
         <div className="p-6 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="inline-flex rounded-lg bg-muted p-1 self-start">
-            {(["all", "preventiva", "corretiva"] as Tab[]).map((tk) => (
+            {(["all", "preventiva", "corretiva", "troca_oleo"] as Tab[]).map((tk) => (
               <button
                 key={tk}
                 onClick={() => changeTab(tk)}
@@ -614,6 +940,9 @@ function MaintenancePage() {
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
                   {t("parts")}
                 </TableHead>
+                <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                  {lang === "pt" ? "Km óleo" : "Km olie"}
+                </TableHead>
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">
                   {t("cost")}
                 </TableHead>
@@ -622,7 +951,7 @@ function MaintenancePage() {
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-10">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
                     {t("noRecords")}
                   </TableCell>
                 </TableRow>
@@ -630,6 +959,7 @@ function MaintenancePage() {
               {filtered.map((m) => {
                 const veh = s.vehicles.find((v) => v.id === m.veiculoId);
                 const isPrev = m.tipo === "preventiva";
+                const isOil = m.tipo === "troca_oleo";
                 return (
                   <TableRow key={m.id} className="hover:bg-muted/30">
                     <TableCell className="text-xs font-mono text-muted-foreground">
@@ -645,21 +975,46 @@ function MaintenancePage() {
                       <span
                         className={[
                           "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                          isPrev
-                            ? "bg-muted text-foreground"
-                            : "bg-foreground text-background",
+                          isOil
+                            ? "bg-foreground text-background"
+                            : isPrev
+                              ? "bg-muted text-foreground"
+                              : "bg-foreground/80 text-background",
                         ].join(" ")}
                       >
-                        {isPrev ? (
+                        {isOil ? (
+                          <Droplets className="h-3 w-3" />
+                        ) : isPrev ? (
                           <ShieldCheck className="h-3 w-3" />
                         ) : (
                           <Wrench className="h-3 w-3" />
                         )}
-                        {isPrev ? t("preventive") : t("corrective")}
+                        {isOil
+                          ? lang === "pt"
+                            ? "Óleo"
+                            : "Olie"
+                          : isPrev
+                            ? t("preventive")
+                            : t("corrective")}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm max-w-[280px] truncate" title={m.pecas}>
                       {m.pecas}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground tabular-nums">
+                      {isOil && m.kmTroca != null ? (
+                        <span>
+                          {m.kmTroca.toLocaleString("pt-BR")}
+                          {m.kmProxima != null && (
+                            <>
+                              {" → "}
+                              {m.kmProxima.toLocaleString("pt-BR")}
+                            </>
+                          )}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs tabular-nums font-semibold">
                       {fmtMoney(m.custo, m.moeda)}
