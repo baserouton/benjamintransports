@@ -76,12 +76,13 @@ export async function findStore(): Promise<Store> {
       moedaAquisicao: row.moedaAquisicao ?? undefined,
     })),
     vehicleCategories: categoryRows.map(({ createdAt: _c, updatedAt: _u, ...row }) => row),
-    clients: clientRows.map(({ createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({
+    clients: clientRows.map(({ createdAt: _createdAt, updatedAt, ...row }) => ({
       ...row,
       email: row.email ?? undefined,
       cnhUrl: row.cnhUrl ?? undefined,
       passaporteUrl: row.passaporteUrl ?? undefined,
       identiteitskaartUrl: row.identiteitskaartUrl ?? undefined,
+      updatedAt: updatedAt ? formatDateTime(updatedAt) : undefined,
     })),
     rentals: rentalRows.map(({ createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({
       ...row,
@@ -364,7 +365,7 @@ export async function setVehicleHidden(id: string, oculto: boolean) {
   return vehicle;
 }
 
-export async function insertClient(input: Omit<Client, "id">) {
+export async function insertClient(input: Omit<Client, "id" | "updatedAt">) {
   const id = randomUUID();
   await db.insert(clients).values({
     id,
@@ -375,6 +376,27 @@ export async function insertClient(input: Omit<Client, "id">) {
     identiteitskaartUrl: input.identiteitskaartUrl || null,
   });
   return id;
+}
+
+export async function updateClient(id: string, input: Omit<Client, "id" | "updatedAt">) {
+  const [existing] = await db.select({ id: clients.id }).from(clients).where(eq(clients.id, id)).limit(1);
+  if (!existing) throw new Error("Cliente não encontrado");
+  await db
+    .update(clients)
+    .set({
+      nome: input.nome.trim(),
+      rg: input.rg.trim(),
+      cpf: input.cpf.trim(),
+      endereco: input.endereco.trim(),
+      whatsapp: input.whatsapp.trim(),
+      email: input.email?.trim() || null,
+      cnhUrl: input.cnhUrl || null,
+      suriname: input.suriname ?? false,
+      passaporteUrl: input.passaporteUrl || null,
+      identiteitskaartUrl: input.identiteitskaartUrl || null,
+    })
+    .where(eq(clients.id, id));
+  return { id };
 }
 
 export async function insertRental(input: Omit<Rental, "id" | "status">) {

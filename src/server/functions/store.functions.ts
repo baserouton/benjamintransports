@@ -206,7 +206,34 @@ export const createClientFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { createClientHandler } = await import("./store.handlers.server");
-    return createClientHandler(data);
+    return createClientHandler({
+      ...data,
+      email: data.email || undefined,
+    });
+  });
+
+export const updateClientFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      id: z.string().min(1).max(36),
+      nome: z.string().trim().min(1).max(180),
+      rg: z.string().trim().max(40),
+      cpf: z.string().trim().max(40),
+      endereco: z.string().trim().max(500),
+      whatsapp: z.string().trim().max(40),
+      email: z.string().trim().email().max(254).optional().or(z.literal("")),
+      cnhUrl: optionalText(1000),
+      suriname: z.boolean().optional(),
+      passaporteUrl: optionalText(1000),
+      identiteitskaartUrl: optionalText(1000),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateClientHandler } = await import("./store.handlers.server");
+    return updateClientHandler({
+      ...data,
+      email: data.email || undefined,
+    });
   });
 
 export const createRentalFn = createServerFn({ method: "POST" })

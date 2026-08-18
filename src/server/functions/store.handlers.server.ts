@@ -29,6 +29,7 @@ import {
   deleteVehicleCategory,
   insertVehicleCategory,
   setVehicleHidden,
+  updateClient,
   updateVehicle,
   updateVehicleCategory,
   type VehicleUpdateInput,
@@ -185,12 +186,27 @@ export async function uploadVehiclePhotosHandler(data: { images: string[] }) {
   return { urls };
 }
 
-export async function createClientHandler(data: Omit<Client, "id">) {
+export async function createClientHandler(data: Omit<Client, "id" | "updatedAt">) {
   const session = await requireSession();
   const id = await insertClient(data);
   await insertActivityLog({
     usuario: session.login,
     acao: `Cadastrou cliente ${data.nome}`,
+    categoria: "cliente",
+    detalhes: { id },
+  });
+  return { id };
+}
+
+export async function updateClientHandler(
+  data: { id: string } & Omit<Client, "id" | "updatedAt">,
+) {
+  const session = await requireSession();
+  const { id, ...input } = data;
+  await updateClient(id, input);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Atualizou cliente ${input.nome}`,
     categoria: "cliente",
     detalhes: { id },
   });

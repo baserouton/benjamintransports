@@ -125,6 +125,8 @@ export interface Client {
   suriname?: boolean;
   passaporteUrl?: string;
   identiteitskaartUrl?: string;
+  /** Última alteração do cadastro (ISO datetime string). */
+  updatedAt?: string;
 }
 
 export interface InspectionOut {
