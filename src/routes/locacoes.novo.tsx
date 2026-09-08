@@ -41,7 +41,7 @@ function NewRental() {
     dataRetirada: new Date().toISOString().slice(0, 10),
     dataSaida: "",
     valorAluguel: "" as number | "",
-    moeda: "SRD" as Currency,
+    moeda: "USD" as Currency,
     seguroValor: "" as number | "",
     seguroObs: "",
     caucaoValor: "" as number | "",

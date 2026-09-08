@@ -90,7 +90,7 @@ function MaintenancePage() {
     tipo: "preventiva" as "preventiva" | "corretiva",
     pecas: "",
     custo: 0,
-    moeda: "SRD" as Currency,
+    moeda: "USD" as Currency,
     data: new Date().toISOString().slice(0, 10),
     obs: "",
   });
@@ -99,7 +99,7 @@ function MaintenancePage() {
     veiculoId: "",
     kmTroca: "" as number | "",
     custo: 0,
-    moeda: "SRD" as Currency,
+    moeda: "USD" as Currency,
     data: new Date().toISOString().slice(0, 10),
     obs: "",
   });
@@ -254,7 +254,7 @@ function MaintenancePage() {
       veiculoId: veiculoId ?? "",
       kmTroca: v?.kmAtual ?? "",
       custo: 0,
-      moeda: "SRD",
+      moeda: "USD",
       data: new Date().toISOString().slice(0, 10),
       obs: "",
     });

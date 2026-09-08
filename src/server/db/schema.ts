@@ -20,6 +20,7 @@ import type {
 
 const id = () => varchar("id", { length: 36 });
 const money = (name: string) => decimal(name, { precision: 14, scale: 2, mode: "number" });
+const fxRate = (name: string) => decimal(name, { precision: 18, scale: 6, mode: "number" });
 
 export const vehicleCategories = mysqlTable(
   "vehicle_categories",
@@ -157,6 +158,12 @@ export const financeEntries = mysqlTable(
     descricao: varchar("descricao", { length: 500 }).notNull(),
     valor: money("valor").notNull(),
     moeda: mysqlEnum("moeda", ["SRD", "USD", "EUR"]).notNull(),
+    /** Equivalente em USD na cotação do momento do lançamento (não recalcula). */
+    valorUsd: money("valor_usd"),
+    /** Unidades da moeda original por 1 USD no momento do lançamento. */
+    taxaUsd: fxRate("taxa_usd"),
+    cotacaoEm: timestamp("cotacao_em"),
+    cotacaoFonte: varchar("cotacao_fonte", { length: 40 }),
     tipo: mysqlEnum("tipo", ["entrada", "despesa"]).notNull(),
     categoria: varchar("categoria", { length: 40 }).notNull().default("outro"),
     manual: boolean("manual").notNull().default(false),
@@ -231,6 +238,15 @@ export const sessions = mysqlTable(
     index("sessions_expires_idx").on(table.expiresAt),
   ],
 );
+
+/** Última cotação USD obtida com sucesso (fallback se a API cair). */
+export const exchangeRateCache = mysqlTable("exchange_rate_cache", {
+  id: varchar("id", { length: 16 }).primaryKey(),
+  srdPerUsd: fxRate("srd_per_usd").notNull(),
+  eurPerUsd: fxRate("eur_per_usd").notNull(),
+  fetchedAt: timestamp("fetched_at").notNull(),
+  source: varchar("source", { length: 40 }).notNull(),
+});
 
 export const activityLogs = mysqlTable(
   "activity_logs",

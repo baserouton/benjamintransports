@@ -64,6 +64,13 @@
       "when": 1786700000000,
       "tag": "0008_maintenance_oil_change",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1786800000000,
+      "tag": "0009_finance_usd_snapshot",
+      "breakpoints": true
     }
   ]
 }

@@ -367,11 +367,23 @@ export interface FinanceEntry {
   descricao: string;
   valor: number;
   moeda: Currency;
+  /** Equivalente em USD na cotação do momento do lançamento. */
+  valorUsd: number;
+  /** Unidades da moeda original por 1 USD no momento do lançamento. */
+  taxaUsd: number;
+  cotacaoEm?: string;
+  cotacaoFonte?: string;
   tipo: "entrada" | "despesa";
   categoria: FinanceCategory;
   /** true = criado manualmente na tela Financeiro (pode excluir). */
   manual: boolean;
   veiculoId?: string;
+}
+
+/** Valor congelado em USD; se ainda não houver snapshot, só USD original entra. */
+export function amountUsd(entry: Pick<FinanceEntry, "valor" | "moeda" | "valorUsd">) {
+  if (entry.valorUsd != null && Number.isFinite(entry.valorUsd)) return entry.valorUsd;
+  return entry.moeda === "USD" ? entry.valor : 0;
 }
 
 export interface VehiclePayback {
@@ -384,26 +396,34 @@ export interface VehiclePayback {
   achieved: boolean;
 }
 
-/** Payback = faturamento (entradas) vs custo de aquisição, na mesma moeda.
+/** Payback em USD (cotação congelada de cada lançamento).
  * remaining = custo − faturamento (positivo = ainda a recuperar; negativo = já lucrativo). */
 export function calcVehiclePayback(
   vehicle: Pick<Vehicle, "id" | "custoAquisicao" | "moedaAquisicao">,
   finance: FinanceEntry[],
 ): VehiclePayback | null {
-  const cost = vehicle.custoAquisicao;
+  const costOriginal = vehicle.custoAquisicao;
+  if (costOriginal == null || costOriginal <= 0) return null;
+  const acquisition = finance.find(
+    (entry) => entry.veiculoId === vehicle.id && entry.categoria === "aquisicao",
+  );
+  const cost =
+    acquisition != null
+      ? amountUsd(acquisition)
+      : vehicle.moedaAquisicao === "USD"
+        ? costOriginal
+        : null;
   if (cost == null || cost <= 0) return null;
-  const currency = vehicle.moedaAquisicao ?? "SRD";
   let rented = 0;
   let expenses = 0;
   for (const entry of finance) {
-    if (entry.veiculoId !== vehicle.id || entry.moeda !== currency) continue;
-    // Aquisição não entra de novo nas despesas operacionais do payback.
+    if (entry.veiculoId !== vehicle.id) continue;
     if (entry.categoria === "aquisicao") continue;
-    if (entry.tipo === "entrada") rented += entry.valor;
-    else expenses += entry.valor;
+    if (entry.tipo === "entrada") rented += amountUsd(entry);
+    else expenses += amountUsd(entry);
   }
   return {
-    currency,
+    currency: "USD",
     cost,
     rented,
     expenses,

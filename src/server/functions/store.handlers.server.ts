@@ -296,17 +296,24 @@ export async function createTransferServiceHandler(data: Omit<TransferService, "
 }
 
 export async function createFinanceEntryHandler(
-  data: Omit<FinanceEntry, "id" | "manual">,
+  data: Omit<FinanceEntry, "id" | "manual" | "valorUsd" | "taxaUsd" | "cotacaoEm" | "cotacaoFonte">,
 ) {
   const session = await requireSession();
-  const id = await insertFinanceEntry({ ...data, manual: true });
+  const result = await insertFinanceEntry({ ...data, manual: true });
   await insertActivityLog({
     usuario: session.login,
     acao: `Lançou ${data.tipo} manual: ${data.descricao}`,
     categoria: "financeiro",
-    detalhes: { id, tipo: data.tipo, valor: data.valor, moeda: data.moeda },
+    detalhes: {
+      id: result.id,
+      tipo: data.tipo,
+      valor: data.valor,
+      moeda: data.moeda,
+      valorUsd: result.valorUsd,
+      taxaUsd: result.taxaUsd,
+    },
   });
-  return { id };
+  return result;
 }
 
 export async function deleteFinanceEntryHandler(data: { id: string }) {

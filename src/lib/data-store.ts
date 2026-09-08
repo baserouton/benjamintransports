@@ -35,6 +35,7 @@ export {
   OIL_CHANGE_ALERT_KM,
   TRANSFER_SERVICE_TYPES,
   TRANSFER_SERVICE_TYPE_LABELS,
+  amountUsd,
   calcVehiclePayback,
   fmtMoney,
   getComplianceExpiry,

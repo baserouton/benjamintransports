@@ -56,7 +56,7 @@ function NewVehicle() {
   const [categoria, setCategoria] = useState<Category>("");
   const [ano, setAno] = useState<number | "">("");
   const [custoAquisicao, setCustoAquisicao] = useState<number | "">("");
-  const [moedaAquisicao, setMoedaAquisicao] = useState<Currency>("SRD");
+  const [moedaAquisicao, setMoedaAquisicao] = useState<Currency>("USD");
   const [kmAtual, setKmAtual] = useState<number | "">("");
   const [kmUltimaTrocaOleo, setKmUltimaTrocaOleo] = useState<number | "">("");
   const [intervaloTrocaOleoKm, setIntervaloTrocaOleoKm] = useState<number | "">(

@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import {
   useStore,
   notifyStoreChanged,
+  amountUsd,
   fmtMoney,
   calcVehiclePayback,
   FINANCE_CATEGORIES,
@@ -71,17 +72,13 @@ export const Route = createFileRoute("/financeiro")({
         content: "Financeiro da empresa: lucro, despesas, entradas e lançamentos.",
       },
       { property: "og:title", content: "Financeiro — Locadora Admin" },
-      { property: "og:description", content: "Gestão financeira multimoeda da locadora." },
+      { property: "og:description", content: "Gestão financeira em dólar da locadora." },
     ],
   }),
   component: Finance,
 });
 
 const CURRENCIES: Currency[] = ["SRD", "USD", "EUR"];
-
-function symbol(m: Currency) {
-  return m === "USD" ? "$" : m === "EUR" ? "€" : "SRD";
-}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -118,7 +115,7 @@ function Finance() {
     data: todayIso(),
     descricao: "",
     valor: "" as number | "",
-    moeda: "SRD" as Currency,
+    moeda: "USD" as Currency,
     tipo: "despesa" as "entrada" | "despesa",
     categoria: "operacional" as FinanceCategory,
     veiculoId: "",
@@ -147,34 +144,25 @@ function Finance() {
   }, [s.vehicles, s.finance]);
 
   const fleetSummary = useMemo(() => {
-    const map: Record<Currency, { cost: number; rented: number; remaining: number; count: number }> =
-      {
-        SRD: { cost: 0, rented: 0, remaining: 0, count: 0 },
-        USD: { cost: 0, rented: 0, remaining: 0, count: 0 },
-        EUR: { cost: 0, rented: 0, remaining: 0, count: 0 },
-      };
+    const summary = { cost: 0, rented: 0, remaining: 0, count: 0 };
     for (const row of fleetPayback) {
-      const m = row.payback.currency;
-      map[m].cost += row.payback.cost;
-      map[m].rented += row.payback.rented;
-      map[m].remaining += row.payback.remaining;
-      map[m].count += 1;
+      summary.cost += row.payback.cost;
+      summary.rented += row.payback.rented;
+      summary.remaining += row.payback.remaining;
+      summary.count += 1;
     }
-    return map;
+    return summary;
   }, [fleetPayback]);
 
   const totals = useMemo(() => {
-    const map: Record<Currency, { ent: number; des: number }> = {
-      SRD: { ent: 0, des: 0 },
-      USD: { ent: 0, des: 0 },
-      EUR: { ent: 0, des: 0 },
-    };
+    let ent = 0;
+    let des = 0;
     for (const f of operationalEntries) {
       if (currency !== "all" && f.moeda !== currency) continue;
-      if (f.tipo === "entrada") map[f.moeda].ent += f.valor;
-      else map[f.moeda].des += f.valor;
+      if (f.tipo === "entrada") ent += amountUsd(f);
+      else des += amountUsd(f);
     }
-    return map;
+    return { ent, des, lucro: ent - des };
   }, [operationalEntries, currency]);
 
   const categoryBreakdown = useMemo(() => {
@@ -183,8 +171,8 @@ function Finance() {
     for (const f of operationalEntries) {
       if (currency !== "all" && f.moeda !== currency) continue;
       const row = map.get(f.categoria) ?? { ent: 0, des: 0 };
-      if (f.tipo === "entrada") row.ent += f.valor;
-      else row.des += f.valor;
+      if (f.tipo === "entrada") row.ent += amountUsd(f);
+      else row.des += amountUsd(f);
       map.set(f.categoria, row);
     }
     return OPERATIONAL_CATEGORIES.map((cat) => ({
@@ -196,16 +184,13 @@ function Finance() {
 
   const topVehicles = useMemo(() => {
     const rows = s.vehicles.map((v) => {
-      const entries = operationalEntries.filter((f) => f.veiculoId === v.id);
-      const byCurr: Record<Currency, number> = { SRD: 0, USD: 0, EUR: 0 };
-      for (const e of entries) {
+      let liquido = 0;
+      for (const e of operationalEntries) {
+        if (e.veiculoId !== v.id) continue;
         if (currency !== "all" && e.moeda !== currency) continue;
-        byCurr[e.moeda] += e.tipo === "entrada" ? e.valor : -e.valor;
+        liquido += e.tipo === "entrada" ? amountUsd(e) : -amountUsd(e);
       }
-      const dominant = (Object.entries(byCurr).sort(
-        (a, b) => Math.abs(b[1]) - Math.abs(a[1]),
-      )[0] ?? ["SRD", 0]) as [Currency, number];
-      return { v, moeda: dominant[0], liquido: dominant[1] };
+      return { v, moeda: "USD" as Currency, liquido };
     });
     return rows
       .filter((r) => r.liquido !== 0)
@@ -249,10 +234,8 @@ function Finance() {
   }, [operationalEntries, s.vehicles, currency, type, category, q]);
 
   const health = useMemo(() => {
-    const entTotal = CURRENCIES.reduce((a, m) => a + totals[m].ent, 0);
-    const desTotal = CURRENCIES.reduce((a, m) => a + totals[m].des, 0);
-    if (entTotal <= 0) return 0;
-    return Math.max(0, Math.min(100, Math.round(((entTotal - desTotal) / entTotal) * 100)));
+    if (totals.ent <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((totals.lucro / totals.ent) * 100)));
   }, [totals]);
 
   const perLabel: Record<Period, string> = {
@@ -262,18 +245,12 @@ function Finance() {
     all: lang === "pt" ? "Tudo" : "Alles",
   };
 
-  const dominantCurrency: Currency = useMemo(() => {
-    return (["SRD", "USD", "EUR"] as Currency[])
-      .map((m) => ({ m, v: totals[m].ent + totals[m].des }))
-      .sort((a, b) => b.v - a.v)[0].m;
-  }, [totals]);
-
   const resetForm = () => {
     setForm({
       data: todayIso(),
       descricao: "",
       valor: "",
-      moeda: "SRD",
+      moeda: "USD",
       tipo: "despesa",
       categoria: "operacional",
       veiculoId: "",
@@ -291,7 +268,7 @@ function Finance() {
     }
     setSaving(true);
     try {
-      await createFinanceEntryFn({
+      const saved = await createFinanceEntryFn({
         data: {
           data: form.data,
           descricao: form.descricao.trim(),
@@ -303,7 +280,13 @@ function Finance() {
         },
       });
       notifyStoreChanged();
-      toast.success("Lançamento salvo.");
+      const valorUsd = saved && typeof saved.valorUsd === "number" ? saved.valorUsd : null;
+      const taxaUsd = saved && typeof saved.taxaUsd === "number" ? saved.taxaUsd : null;
+      toast.success(
+        form.moeda !== "USD" && valorUsd != null && taxaUsd != null
+          ? `Lançamento salvo em ${fmtMoney(valorUsd, "USD")} (1 USD = ${taxaUsd.toLocaleString("pt-BR", { maximumFractionDigits: 4 })} ${form.moeda}).`
+          : "Lançamento salvo.",
+      );
       setOpen(false);
       resetForm();
     } catch (error) {
@@ -329,8 +312,8 @@ function Finance() {
         title={t("finance") as string}
         description={
           lang === "pt"
-            ? "Financeiro da empresa: lucro, despesas, entradas e fluxo multimoeda"
-            : "Bedrijfsfinanciën: winst, kosten, inkomsten en kasstroom"
+            ? "Financeiro em dólar. SRD e EUR são convertidos na hora do lançamento e a cotação fica gravada."
+            : "Financiën in dollar. SRD en EUR worden bij boeking omgerekend; de koers wordt bewaard."
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -438,6 +421,11 @@ function Finance() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <p className="text-[11px] text-muted-foreground">
+                        {lang === "pt"
+                          ? "SRD e EUR viram USD na hora, com a cotação gravada."
+                          : "SRD en EUR worden meteen naar USD omgerekend; de koers wordt bewaard."}
+                      </p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -500,20 +488,37 @@ function Finance() {
         }
       />
 
-      {/* Currency balances / lucro */}
       <div className="grid gap-4 md:grid-cols-3">
-        {CURRENCIES.map((m) => {
-          const b = totals[m];
-          const lucro = b.ent - b.des;
-          const isDominant = m === dominantCurrency;
-          const delta = b.ent > 0 ? ((lucro / b.ent) * 100).toFixed(1) : "0.0";
-          const positive = lucro >= 0;
+        {(
+          [
+            {
+              key: "lucro",
+              label: lang === "pt" ? "Lucro (USD)" : "Winst (USD)",
+              value: totals.lucro,
+              highlight: true,
+            },
+            {
+              key: "ent",
+              label: lang === "pt" ? "Entradas (USD)" : "Inkomsten (USD)",
+              value: totals.ent,
+              highlight: false,
+            },
+            {
+              key: "des",
+              label: lang === "pt" ? "Despesas (USD)" : "Uitgaven (USD)",
+              value: totals.des,
+              highlight: false,
+            },
+          ] as const
+        ).map((card) => {
+          const positive = card.value >= 0;
+          const delta = totals.ent > 0 ? ((totals.lucro / totals.ent) * 100).toFixed(1) : "0.0";
           return (
             <Card
-              key={m}
+              key={card.key}
               className={[
                 "relative overflow-hidden rounded-2xl p-6 transition-colors",
-                isDominant
+                card.highlight
                   ? "bg-foreground text-background border-transparent"
                   : "bg-card hover:border-muted-foreground/40",
               ].join(" ")}
@@ -522,21 +527,21 @@ function Finance() {
                 <span
                   className={[
                     "text-[11px] font-bold tracking-widest uppercase",
-                    isDominant ? "text-background/60" : "text-muted-foreground",
+                    card.highlight ? "text-background/60" : "text-muted-foreground",
                   ].join(" ")}
                 >
-                  {lang === "pt" ? "Lucro" : "Winst"} {m}
+                  {card.label}
                 </span>
                 <span
                   className={[
                     "h-2 w-2 rounded-full",
-                    isDominant ? "bg-background/60" : "bg-muted-foreground/40",
+                    card.highlight ? "bg-background/60" : "bg-muted-foreground/40",
                   ].join(" ")}
                 />
               </div>
               <div className="mt-4 flex items-baseline gap-2">
                 <span className="text-3xl font-extrabold tracking-tight tabular-nums">
-                  {lucro.toLocaleString(lang === "pt" ? "pt-BR" : "nl-NL", {
+                  {card.value.toLocaleString(lang === "pt" ? "pt-BR" : "nl-NL", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
@@ -544,35 +549,29 @@ function Finance() {
                 <span
                   className={[
                     "text-sm font-medium",
-                    isDominant ? "text-background/60" : "text-muted-foreground",
+                    card.highlight ? "text-background/60" : "text-muted-foreground",
                   ].join(" ")}
                 >
-                  {symbol(m)}
+                  $
                 </span>
               </div>
-              <div className="mt-4 flex items-center gap-3 text-xs">
-                <span
-                  className={[
-                    "inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold text-[10px]",
-                    isDominant
-                      ? "bg-background/10 text-background"
-                      : positive
-                        ? "bg-muted text-foreground"
-                        : "bg-muted text-muted-foreground",
-                  ].join(" ")}
-                >
-                  {positive ? (
-                    <ArrowUpRight className="h-3 w-3" />
-                  ) : (
-                    <ArrowDownRight className="h-3 w-3" />
-                  )}
-                  {positive ? "+" : ""}
-                  {delta}%
-                </span>
-                <span className={isDominant ? "text-background/60" : "text-muted-foreground"}>
-                  {t("entries")} {fmtMoney(b.ent, m)} · {t("expenses")} {fmtMoney(b.des, m)}
-                </span>
-              </div>
+              {card.key === "lucro" && (
+                <div className="mt-4 flex items-center gap-3 text-xs">
+                  <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold text-[10px] bg-background/10 text-background">
+                    {positive ? (
+                      <ArrowUpRight className="h-3 w-3" />
+                    ) : (
+                      <ArrowDownRight className="h-3 w-3" />
+                    )}
+                    {positive ? "+" : ""}
+                    {delta}%
+                  </span>
+                  <span className="text-background/60">
+                    {t("entries")} {fmtMoney(totals.ent, "USD")} · {t("expenses")}{" "}
+                    {fmtMoney(totals.des, "USD")}
+                  </span>
+                </div>
+              )}
             </Card>
           );
         })}
@@ -709,40 +708,40 @@ function Finance() {
           </Dialog>
         </div>
         <div className="p-6 grid gap-4 sm:grid-cols-3">
-          {CURRENCIES.map((m) => {
-            const row = fleetSummary[m];
-            if (row.count === 0) return null;
-            return (
-              <div key={m} className="rounded-xl bg-muted/40 p-4">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                  {m} · {row.count} {lang === "pt" ? "carros" : "auto's"}
+          {fleetSummary.count > 0 && (
+            <div className="rounded-xl bg-muted/40 p-4 sm:col-span-3">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                USD · {fleetSummary.count} {lang === "pt" ? "carros" : "auto's"}
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3 text-xs">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">
+                    {lang === "pt" ? "Aquisição" : "Aankoop"}
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {fmtMoney(fleetSummary.cost, "USD")}
+                  </span>
                 </div>
-                <div className="mt-3 space-y-1.5 text-xs">
-                  <div className="flex justify-between gap-2">
-                    <span className="text-muted-foreground">
-                      {lang === "pt" ? "Aquisição" : "Aankoop"}
-                    </span>
-                    <span className="font-semibold tabular-nums">{fmtMoney(row.cost, m)}</span>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <span className="text-muted-foreground">
-                      {lang === "pt" ? "Faturado" : "Omzet"}
-                    </span>
-                    <span className="font-semibold tabular-nums">{fmtMoney(row.rented, m)}</span>
-                  </div>
-                  <div className="flex justify-between gap-2 pt-1 border-t border-border">
-                    <span className="text-muted-foreground">
-                      {lang === "pt" ? "Saldo" : "Saldo"}
-                    </span>
-                    <span className="font-bold tabular-nums">
-                      {row.remaining > 0 ? "− " : row.remaining < 0 ? "+ " : ""}
-                      {fmtMoney(Math.abs(row.remaining), m)}
-                    </span>
-                  </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">
+                    {lang === "pt" ? "Faturado" : "Omzet"}
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {fmtMoney(fleetSummary.rented, "USD")}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">
+                    {lang === "pt" ? "Saldo" : "Saldo"}
+                  </span>
+                  <span className="font-bold tabular-nums">
+                    {fleetSummary.remaining > 0 ? "− " : fleetSummary.remaining < 0 ? "+ " : ""}
+                    {fmtMoney(Math.abs(fleetSummary.remaining), "USD")}
+                  </span>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          )}
           {fleetPayback.length === 0 && (
             <p className="text-sm text-muted-foreground sm:col-span-3 text-center py-4">
               {lang === "pt"
@@ -771,15 +770,13 @@ function Finance() {
               <div key={r.cat} className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <span className="font-semibold">{FINANCE_CATEGORY_LABELS[r.cat]}</span>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  +{r.ent.toLocaleString(lang === "pt" ? "pt-BR" : "nl-NL", { maximumFractionDigits: 0 })}
+                  +{fmtMoney(r.ent, "USD")}
                   {" · "}
-                  −{r.des.toLocaleString(lang === "pt" ? "pt-BR" : "nl-NL", { maximumFractionDigits: 0 })}
+                  −{fmtMoney(r.des, "USD")}
                   {" · "}
                   <span className="font-semibold text-foreground">
                     {r.liquido >= 0 ? "+" : "−"}
-                    {Math.abs(r.liquido).toLocaleString(lang === "pt" ? "pt-BR" : "nl-NL", {
-                      maximumFractionDigits: 0,
-                    })}
+                    {fmtMoney(Math.abs(r.liquido), "USD")}
                   </span>
                 </span>
               </div>
@@ -998,8 +995,18 @@ function Finance() {
                       {veh ? `${veh.modelo} · ${veh.placa}` : "—"}
                     </TableCell>
                     <TableCell className="text-right text-xs font-bold tabular-nums">
-                      {isIn ? "+ " : "− "}
-                      {fmtMoney(f.valor, f.moeda)}
+                      <div>
+                        {isIn ? "+ " : "− "}
+                        {fmtMoney(amountUsd(f), "USD")}
+                      </div>
+                      {f.moeda !== "USD" && (
+                        <div className="text-[10px] font-normal text-muted-foreground">
+                          {fmtMoney(f.valor, f.moeda)}
+                          {f.taxaUsd > 0
+                            ? ` · 1 USD = ${f.taxaUsd.toLocaleString(lang === "pt" ? "pt-BR" : "nl-NL", { maximumFractionDigits: 4 })} ${f.moeda}`
+                            : ""}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
                       <span

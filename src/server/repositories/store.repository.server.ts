@@ -15,6 +15,13 @@ import {
   type Vehicle,
   type VehicleCategory,
 } from "@/domain/models";
+import {
+  applyUsdRates,
+  backfillMissingFinanceUsd,
+  getUsdRates,
+  snapshotUsd,
+  type UsdSnapshot,
+} from "@/server/fx/exchange-rate.server";
 import { db } from "@/server/db/client.server";
 import {
   activityLogs,
@@ -28,12 +35,27 @@ import {
   vehicles,
 } from "@/server/db/schema";
 
+function usdColumns(snap: UsdSnapshot) {
+  return {
+    valorUsd: snap.valorUsd,
+    taxaUsd: snap.taxaUsd,
+    cotacaoEm: snap.cotacaoEm,
+    cotacaoFonte: snap.cotacaoFonte,
+  };
+}
+
 const formatDateTime = (value: Date | string) =>
   typeof value === "string"
     ? value.replace("T", " ").slice(0, 19)
     : value.toISOString().replace("T", " ").slice(0, 19);
 
 export async function findStore(): Promise<Store> {
+  try {
+    await backfillMissingFinanceUsd();
+  } catch (error) {
+    console.error("Falha ao converter lançamentos antigos para USD", error);
+  }
+
   const [
     vehicleRows,
     categoryRows,
@@ -112,6 +134,10 @@ export async function findStore(): Promise<Store> {
     ),
     finance: financeRows.map(({ createdAt: _createdAt, ...row }) => ({
       ...row,
+      valorUsd: row.valorUsd ?? (row.moeda === "USD" ? row.valor : 0),
+      taxaUsd: row.taxaUsd ?? (row.moeda === "USD" ? 1 : 0),
+      cotacaoEm: row.cotacaoEm ? formatDateTime(row.cotacaoEm) : undefined,
+      cotacaoFonte: row.cotacaoFonte ?? undefined,
       categoria: (row.categoria as FinanceCategory) || "outro",
       manual: Boolean(row.manual),
       veiculoId: row.veiculoId ?? undefined,
@@ -158,6 +184,10 @@ export async function insertVehicle(input: Omit<Vehicle, "id">) {
   const id = randomUUID();
   const seguroFeito = input.seguroFeito ?? false;
   const vistoriaFeita = input.vistoriaFeita ?? false;
+  const aquisicaoSnap =
+    input.custoAquisicao != null && input.custoAquisicao > 0
+      ? await snapshotUsd(input.custoAquisicao, input.moedaAquisicao ?? "USD")
+      : null;
   await db.transaction(async (tx) => {
     await tx.insert(vehicles).values({
       id,
@@ -178,17 +208,18 @@ export async function insertVehicle(input: Omit<Vehicle, "id">) {
       custoAquisicao: input.custoAquisicao ?? null,
       moedaAquisicao: input.moedaAquisicao ?? null,
     });
-    if (input.custoAquisicao != null && input.custoAquisicao > 0) {
+    if (aquisicaoSnap && input.custoAquisicao != null && input.custoAquisicao > 0) {
       await tx.insert(financeEntries).values({
         id: randomUUID(),
         data: new Date().toISOString().slice(0, 10),
         descricao: `Aquisição — ${input.modelo} (${input.placa})`,
         valor: input.custoAquisicao,
-        moeda: input.moedaAquisicao ?? "SRD",
+        moeda: input.moedaAquisicao ?? "USD",
         tipo: "despesa",
         categoria: "aquisicao",
         manual: false,
         veiculoId: id,
+        ...usdColumns(aquisicaoSnap),
       });
     }
   });
@@ -308,6 +339,43 @@ export type VehicleUpdateInput = {
 };
 
 export async function updateVehicle(id: string, input: VehicleUpdateInput) {
+  const moeda = input.moedaAquisicao ?? "USD";
+  const [existingAcq] =
+    input.custoAquisicao != null && input.custoAquisicao > 0
+      ? await db
+          .select({
+            id: financeEntries.id,
+            valor: financeEntries.valor,
+            moeda: financeEntries.moeda,
+            valorUsd: financeEntries.valorUsd,
+            taxaUsd: financeEntries.taxaUsd,
+            cotacaoEm: financeEntries.cotacaoEm,
+            cotacaoFonte: financeEntries.cotacaoFonte,
+          })
+          .from(financeEntries)
+          .where(and(eq(financeEntries.veiculoId, id), eq(financeEntries.categoria, "aquisicao")))
+          .limit(1)
+      : [];
+  const sameAcq =
+    existingAcq &&
+    existingAcq.valor === input.custoAquisicao &&
+    existingAcq.moeda === moeda &&
+    existingAcq.valorUsd != null;
+  const aquisicaoSnap =
+    input.custoAquisicao != null && input.custoAquisicao > 0 && !sameAcq
+      ? await snapshotUsd(input.custoAquisicao, moeda)
+      : sameAcq && existingAcq.valorUsd != null
+        ? {
+            valorUsd: existingAcq.valorUsd,
+            taxaUsd: existingAcq.taxaUsd ?? 1,
+            cotacaoEm:
+              existingAcq.cotacaoEm instanceof Date
+                ? existingAcq.cotacaoEm
+                : new Date(existingAcq.cotacaoEm ?? Date.now()),
+            cotacaoFonte: (existingAcq.cotacaoFonte as UsdSnapshot["cotacaoFonte"]) ?? "usd",
+          }
+        : null;
+
   await db.transaction(async (tx) => {
     await tx
       .update(vehicles)
@@ -329,25 +397,18 @@ export async function updateVehicle(id: string, input: VehicleUpdateInput) {
       })
       .where(eq(vehicles.id, id));
 
-    if (input.custoAquisicao != null && input.custoAquisicao > 0) {
-      const [existing] = await tx
-        .select({ id: financeEntries.id })
-        .from(financeEntries)
-        .where(
-          and(eq(financeEntries.veiculoId, id), eq(financeEntries.categoria, "aquisicao")),
-        )
-        .limit(1);
+    if (input.custoAquisicao != null && input.custoAquisicao > 0 && aquisicaoSnap) {
       const descricao = `Aquisição — ${input.modelo} (${input.placa})`;
-      const moeda = input.moedaAquisicao ?? "SRD";
-      if (existing) {
+      if (existingAcq) {
         await tx
           .update(financeEntries)
           .set({
             descricao,
             valor: input.custoAquisicao,
             moeda,
+            ...usdColumns(aquisicaoSnap),
           })
-          .where(eq(financeEntries.id, existing.id));
+          .where(eq(financeEntries.id, existingAcq.id));
       } else {
         await tx.insert(financeEntries).values({
           id: randomUUID(),
@@ -359,6 +420,7 @@ export async function updateVehicle(id: string, input: VehicleUpdateInput) {
           categoria: "aquisicao",
           manual: false,
           veiculoId: id,
+          ...usdColumns(aquisicaoSnap),
         });
       }
     }
@@ -422,6 +484,12 @@ export async function updateClient(id: string, input: Omit<Client, "id" | "updat
 
 export async function insertRental(input: Omit<Rental, "id" | "status">) {
   const id = randomUUID();
+  const rates = await getUsdRates();
+  const aluguelSnap = applyUsdRates(input.valorAluguel, input.moeda, rates);
+  const seguroSnap =
+    input.seguroValor != null && input.seguroValor > 0
+      ? applyUsdRates(input.seguroValor, input.moeda, rates)
+      : null;
   await db.transaction(async (tx) => {
     await tx.insert(rentals).values({
       id,
@@ -450,8 +518,9 @@ export async function insertRental(input: Omit<Rental, "id" | "status">) {
       categoria: "aluguel",
       manual: false,
       veiculoId: input.veiculoId,
+      ...usdColumns(aluguelSnap),
     });
-    if (input.seguroValor != null && input.seguroValor > 0) {
+    if (seguroSnap && input.seguroValor != null && input.seguroValor > 0) {
       await tx.insert(financeEntries).values({
         id: randomUUID(),
         data: input.dataRetirada,
@@ -462,6 +531,7 @@ export async function insertRental(input: Omit<Rental, "id" | "status">) {
         categoria: "seguro",
         manual: false,
         veiculoId: input.veiculoId,
+        ...usdColumns(seguroSnap),
       });
     }
   });
@@ -470,6 +540,7 @@ export async function insertRental(input: Omit<Rental, "id" | "status">) {
 
 export async function insertMaintenance(input: Omit<Maintenance, "id">) {
   const id = randomUUID();
+  const snap = await snapshotUsd(input.custo, input.moeda);
   await db.transaction(async (tx) => {
     await tx.insert(maintenance).values({
       id,
@@ -498,6 +569,7 @@ export async function insertMaintenance(input: Omit<Maintenance, "id">) {
       categoria: "manutencao",
       manual: false,
       veiculoId: input.veiculoId,
+      ...usdColumns(snap),
     });
   });
   return id;
@@ -517,6 +589,7 @@ export async function registerOilChange(input: OilChangeInput) {
     throw new Error("Informe o km da troca de óleo");
   }
   const id = randomUUID();
+  const snap = await snapshotUsd(input.custo, input.moeda);
   await db.transaction(async (tx) => {
     const [vehicle] = await tx
       .select({
@@ -570,6 +643,7 @@ export async function registerOilChange(input: OilChangeInput) {
       categoria: "manutencao",
       manual: false,
       veiculoId: input.veiculoId,
+      ...usdColumns(snap),
     });
   });
   return id;
@@ -623,6 +697,7 @@ export async function returnRental(id: string, inspection: InspectionIn) {
   if (!inspection.kmFotoUrl?.trim()) {
     throw new Error("Anexe a foto do odômetro na devolução");
   }
+  const rates = inspection.taxa > 0 ? await getUsdRates() : null;
   await db.transaction(async (tx) => {
     const [rental] = await tx.select().from(rentals).where(eq(rentals.id, id)).limit(1);
     if (!rental) throw new Error("Locação não encontrada");
@@ -664,6 +739,7 @@ export async function returnRental(id: string, inspection: InspectionIn) {
         categoria: "taxa",
         manual: false,
         veiculoId: rental.veiculoId,
+        ...usdColumns(applyUsdRates(inspection.taxa, rental.moeda, rates!)),
       });
     }
   });
@@ -689,6 +765,7 @@ export async function insertTransferService(input: Omit<TransferService, "id">) 
   }
 
   const tipoLabel = TRANSFER_SERVICE_TYPE_LABELS[input.tipoServico] ?? input.tipoServico;
+  const snap = await snapshotUsd(input.valor, input.moeda);
 
   await db.transaction(async (tx) => {
     await tx.insert(transferServices).values({
@@ -712,15 +789,19 @@ export async function insertTransferService(input: Omit<TransferService, "id">) 
       categoria: "translato",
       manual: false,
       veiculoId: input.veiculoId,
+      ...usdColumns(snap),
     });
   });
   return id;
 }
 
 export async function insertFinanceEntry(
-  input: Omit<FinanceEntry, "id" | "manual"> & { manual?: boolean },
+  input: Omit<FinanceEntry, "id" | "manual" | "valorUsd" | "taxaUsd" | "cotacaoEm" | "cotacaoFonte"> & {
+    manual?: boolean;
+  },
 ) {
   const id = randomUUID();
+  const snap = await snapshotUsd(input.valor, input.moeda);
   await db.insert(financeEntries).values({
     id,
     data: input.data,
@@ -731,8 +812,9 @@ export async function insertFinanceEntry(
     categoria: input.categoria,
     manual: input.manual ?? true,
     veiculoId: input.veiculoId ?? null,
+    ...usdColumns(snap),
   });
-  return id;
+  return { id, ...snap };
 }
 
 export async function deleteFinanceEntry(id: string) {

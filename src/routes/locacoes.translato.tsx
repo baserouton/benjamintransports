@@ -77,7 +77,7 @@ function TranslatoPage() {
     destino: "",
     data: todayIso(),
     valor: "" as number | "",
-    moeda: "SRD" as Currency,
+    moeda: "USD" as Currency,
     clienteNome: "",
     obs: "",
   });
@@ -106,7 +106,7 @@ function TranslatoPage() {
       destino: "",
       data: todayIso(),
       valor: "",
-      moeda: "SRD",
+      moeda: "USD",
       clienteNome: "",
       obs: "",
     });
