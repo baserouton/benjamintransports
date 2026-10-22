@@ -53,9 +53,11 @@ function RentalsList() {
       const c = s.clients.find((x) => x.id === r.clienteId);
       const saida = new Date(r.dataSaida);
       const diasRestantes = daysBetween(today, saida);
-      const atrasado = r.status === "entregue" && diasRestantes < 0;
-      const proximo = r.status === "entregue" && diasRestantes >= 0 && diasRestantes <= 3;
-      return { r, v, c, diasRestantes, atrasado, proximo };
+      const indeterminado = Boolean(r.prazoIndeterminado);
+      const atrasado = r.status === "entregue" && !indeterminado && diasRestantes < 0;
+      const proximo =
+        r.status === "entregue" && !indeterminado && diasRestantes >= 0 && diasRestantes <= 3;
+      return { r, v, c, diasRestantes, atrasado, proximo, indeterminado };
     });
   }, [s.rentals, s.vehicles, s.clients, today]);
 
@@ -225,18 +227,26 @@ function RentalsList() {
           ) : (
             <ul className="divide-y divide-border">
               {[...ativos]
-                .sort((a, b) => a.diasRestantes - b.diasRestantes)
+                .sort((a, b) => {
+                  const da = a.indeterminado ? 9999 : a.diasRestantes;
+                  const db = b.indeterminado ? 9999 : b.diasRestantes;
+                  return da - db;
+                })
                 .slice(0, 5)
-                .map(({ r, v, c, diasRestantes, atrasado }) => (
+                .map(({ r, v, c, diasRestantes, atrasado, indeterminado }) => (
                   <li key={r.id} className="py-3 flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium truncate">{v?.modelo} <span className="text-muted-foreground font-mono text-xs">· {v?.placa}</span></div>
                       <div className="text-xs text-muted-foreground truncate">{c?.nome}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-xs text-muted-foreground">{nf.format(new Date(r.dataSaida))}</div>
-                      <div className={`text-xs font-medium ${atrasado ? "text-destructive" : diasRestantes <= 3 ? "text-foreground" : "text-muted-foreground"}`}>
-                        {atrasado
+                      <div className="text-xs text-muted-foreground">
+                        {indeterminado ? t("indefiniteTerm") : nf.format(new Date(r.dataSaida))}
+                      </div>
+                      <div className={`text-xs font-medium ${atrasado ? "text-destructive" : diasRestantes <= 3 && !indeterminado ? "text-foreground" : "text-muted-foreground"}`}>
+                        {indeterminado
+                          ? t("indefiniteTerm")
+                          : atrasado
                           ? `${Math.abs(diasRestantes)}${lang === "pt" ? "d atrasado" : "d te laat"}`
                           : diasRestantes === 0
                             ? lang === "pt" ? "hoje" : "vandaag"
@@ -325,7 +335,7 @@ function RentalsList() {
                   </TableCell>
                 </TableRow>
               )}
-              {rows.map(({ r, v, c, diasRestantes, atrasado }) => (
+              {rows.map(({ r, v, c, diasRestantes, atrasado, indeterminado }) => (
                 <TableRow
                   key={r.id}
                   onClick={() => nav({ to: "/locacoes/$id", params: { id: r.id } })}
@@ -338,8 +348,10 @@ function RentalsList() {
                   <TableCell>{c?.nome}</TableCell>
                   <TableCell className="text-xs tabular-nums">{r.dataRetirada}</TableCell>
                   <TableCell>
-                    <div className="text-xs tabular-nums">{r.dataSaida}</div>
-                    {r.status === "entregue" && (
+                    <div className="text-xs tabular-nums">
+                      {indeterminado ? t("indefiniteTerm") : r.dataSaida}
+                    </div>
+                    {r.status === "entregue" && !indeterminado && (
                       <div className={`text-[10px] ${atrasado ? "text-destructive font-medium" : "text-muted-foreground"}`}>
                         {atrasado
                           ? `${Math.abs(diasRestantes)}${lang === "pt" ? "d atrasado" : "d te laat"}`

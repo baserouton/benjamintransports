@@ -6,9 +6,17 @@ import { useI18n } from "@/lib/i18n";
 import { useStore, notifyStoreChanged, fmtMoney, logAction } from "@/lib/data-store";
 import {
   deliverRentalFn,
+  renewRentalFn,
   returnRentalFn,
   uploadVehiclePhotosFn,
 } from "@/server/functions/store.functions";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,6 +90,11 @@ function RentalDetail() {
   });
   const [inPhoto, setInPhoto] = useState<{ file: File; preview: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [renewIndefinite, setRenewIndefinite] = useState(false);
+  const [renewDate, setRenewDate] = useState("");
+  const [renewValor, setRenewValor] = useState<number | "">("");
+  const [renewing, setRenewing] = useState(false);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -106,10 +119,13 @@ function RentalDetail() {
 
   const saida = new Date(r.dataSaida);
   const retirada = new Date(r.dataRetirada);
+  const indeterminado = Boolean(r.prazoIndeterminado);
   const diasRestantes = daysBetween(today, saida);
-  const duracao = Math.max(1, daysBetween(retirada, saida));
-  const atrasado = r.status === "entregue" && diasRestantes < 0;
-  const proximo = r.status === "entregue" && diasRestantes >= 0 && diasRestantes <= 3;
+  const duracao = indeterminado
+    ? Math.max(1, daysBetween(retirada, today))
+    : Math.max(1, daysBetween(retirada, saida));
+  const atrasado = r.status === "entregue" && !indeterminado && diasRestantes < 0;
+  const proximo = r.status === "entregue" && !indeterminado && diasRestantes >= 0 && diasRestantes <= 3;
 
   // Progresso do período (0-100)
   const totalMs = saida.getTime() - retirada.getTime();
@@ -209,6 +225,38 @@ function RentalDetail() {
     }
   };
 
+  const openRenew = () => {
+    setRenewIndefinite(Boolean(r.prazoIndeterminado));
+    setRenewDate(r.dataSaida);
+    setRenewValor("");
+    setRenewOpen(true);
+  };
+
+  const saveRenewal = async () => {
+    if (!renewIndefinite && !renewDate) {
+      toast.error(lang === "pt" ? "Informe a nova data de devolução." : "Vul de nieuwe retourdatum in.");
+      return;
+    }
+    setRenewing(true);
+    try {
+      await renewRentalFn({
+        data: {
+          id: r.id,
+          prazoIndeterminado: renewIndefinite,
+          dataSaida: renewIndefinite ? undefined : renewDate,
+          valor: renewValor === "" ? undefined : Number(renewValor),
+        },
+      });
+      notifyStoreChanged();
+      toast.success(lang === "pt" ? "Aluguel renovado." : "Huur verlengd.");
+      setRenewOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível renovar");
+    } finally {
+      setRenewing(false);
+    }
+  };
+
   const statusLabel = r.status === "pendente" ? t("pending") : r.status === "entregue" ? t("delivered") : t("returned");
 
   const nextSteps: { icon: typeof CheckCircle2; text: string; tone: "primary" | "warn" | "muted"; action?: () => void; cta?: string }[] = [];
@@ -246,6 +294,13 @@ function RentalDetail() {
       });
     }
     nextSteps.push({
+      icon: Calendar,
+      text: lang === "pt" ? "Renovar o prazo se a cliente continuar com o carro" : "Verleng de termijn als de klant de auto houdt",
+      tone: "primary",
+      action: openRenew,
+      cta: t("renewRental"),
+    });
+    nextSteps.push({
       icon: ShieldCheck,
       text: lang === "pt" ? "Fazer vistoria de devolução ao receber o veículo" : "Voer retour-inspectie uit bij ontvangst",
       tone: "muted",
@@ -274,9 +329,16 @@ function RentalDetail() {
         title={`${v?.modelo ?? "—"}`}
         description={`${v?.placa ?? "—"} · ${c?.nome ?? "—"} · #${r.id.slice(0, 6)}`}
         actions={
-          <Button variant="outline" size="sm" onClick={() => nav({ to: "/locacoes" })}>
-            <ArrowLeft className="h-4 w-4 mr-1" /> {t("back")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {r.status === "entregue" && (
+              <Button size="sm" onClick={openRenew}>
+                <Calendar className="h-4 w-4 mr-1" /> {t("renewRental")}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => nav({ to: "/locacoes" })}>
+              <ArrowLeft className="h-4 w-4 mr-1" /> {t("back")}
+            </Button>
+          </div>
         }
       />
 
@@ -298,7 +360,9 @@ function RentalDetail() {
             <div className="text-3xl font-semibold tracking-tight mt-1">{statusLabel}</div>
             <div className={`text-xs mt-1 ${atrasado || r.status === "entregue" ? "opacity-70" : "text-muted-foreground"}`}>
               {r.status === "pendente" && (lang === "pt" ? "Aguardando retirada do veículo" : "Wachten op afhaling")}
-              {r.status === "entregue" && (atrasado
+              {r.status === "entregue" && (indeterminado
+                ? lang === "pt" ? "Prazo indeterminado — sem data de atraso" : "Onbepaalde termijn — geen te-laat-datum"
+                : atrasado
                 ? lang === "pt" ? `Devolução atrasada em ${Math.abs(diasRestantes)} dias` : `Retour ${Math.abs(diasRestantes)}d te laat`
                 : diasRestantes === 0
                   ? lang === "pt" ? "Devolução hoje" : "Retour vandaag"
@@ -308,13 +372,17 @@ function RentalDetail() {
           </div>
           <div className="grid grid-cols-3 gap-4 md:gap-8">
             <Metric label={lang === "pt" ? "Retirada" : "Ophalen"} value={r.dataRetirada} muted={atrasado || r.status === "entregue"} />
-            <Metric label={lang === "pt" ? "Devolução" : "Retour"} value={r.dataSaida} muted={atrasado || r.status === "entregue"} />
+            <Metric
+              label={lang === "pt" ? "Devolução" : "Retour"}
+              value={indeterminado ? t("indefiniteTerm") : r.dataSaida}
+              muted={atrasado || r.status === "entregue"}
+            />
             <Metric label={lang === "pt" ? "Duração" : "Duur"} value={`${duracao}d`} muted={atrasado || r.status === "entregue"} />
           </div>
         </div>
 
         {/* Barra de progresso do período */}
-        {r.status !== "pendente" && (
+        {r.status !== "pendente" && !indeterminado && (
           <div className="mt-5">
             <div className={`h-1.5 rounded-full overflow-hidden ${atrasado || r.status === "entregue" ? "bg-background/15" : "bg-muted"}`}>
               <div
@@ -355,6 +423,34 @@ function RentalDetail() {
               sub={lang === "pt" ? `${duracao} dias · ${r.moeda}` : `${duracao}d · ${r.moeda}`}
             />
           </div>
+
+          {(r.renovacoes?.length ?? 0) > 0 && (
+            <div className="mt-6">
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">
+                {t("renewals")}
+              </div>
+              <ul className="divide-y divide-border rounded-md border border-border">
+                {r.renovacoes!.map((item, i) => (
+                  <li key={`${item.quando}-${i}`} className="px-3 py-2 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>
+                        {item.prazoIndeterminado
+                          ? t("indefiniteTerm")
+                          : `${lang === "pt" ? "Até" : "Tot"} ${item.dataSaidaNova}`}
+                      </span>
+                      {item.valor != null && item.moeda ? (
+                        <span className="font-mono tabular-nums">{fmtMoney(item.valor, item.moeda)}</span>
+                      ) : null}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {item.quando}
+                      {item.usuario ? ` · ${item.usuario}` : ""}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {relatedFinance.length > 0 && (
             <div className="mt-6">
@@ -745,6 +841,65 @@ function RentalDetail() {
           </div>
         </Card>
       )}
+
+      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("renewRental")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {lang === "pt"
+                ? "A cliente continua com o mesmo carro. Escolha um novo prazo ou deixe indeterminado."
+                : "De klant houdt dezelfde auto. Kies een nieuwe termijn of laat die onbepaald."}
+            </p>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={renewIndefinite}
+                onCheckedChange={(v) => setRenewIndefinite(Boolean(v))}
+              />
+              {t("indefiniteTerm")}
+            </label>
+            {!renewIndefinite && (
+              <div className="space-y-1.5">
+                <Label>{t("newReturnDate")}</Label>
+                <Input
+                  type="date"
+                  value={renewDate}
+                  min={r.dataRetirada}
+                  onChange={(e) => setRenewDate(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>{t("renewalValue")}</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={renewValor}
+                onChange={(e) =>
+                  setRenewValor(e.target.value === "" ? "" : Number(e.target.value))
+                }
+                placeholder={fmtMoney(r.valorAluguel, r.moeda)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                {lang === "pt"
+                  ? "Vazio = mantém o valor atual. Se preencher, lança no financeiro em dólar."
+                  : "Leeg = huidig bedrag. Invullen = boeking in dollar."}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenewOpen(false)}>
+              {t("cancel")}
+            </Button>
+            <Button onClick={() => void saveRenewal()} disabled={renewing}>
+              {renewing ? "…" : t("save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

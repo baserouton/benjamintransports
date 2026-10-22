@@ -26,6 +26,7 @@ import {
   insertTransferService,
   insertVehicle,
   registerOilChange,
+  renewRental,
   returnRental,
   assertVehicleCategoryExists,
   deleteVehicleCategory,
@@ -270,6 +271,30 @@ export async function deliverRentalHandler(data: {
     categoria: "locacao",
   });
   return { ok: true };
+}
+
+export async function renewRentalHandler(data: {
+  id: string;
+  prazoIndeterminado: boolean;
+  dataSaida?: string;
+  valor?: number;
+}) {
+  const session = await requireSession();
+  const result = await renewRental({ ...data, usuario: session.login });
+  await insertActivityLog({
+    usuario: session.login,
+    acao: data.prazoIndeterminado
+      ? `Renovou locação ${data.id.slice(0, 6)} com prazo indeterminado`
+      : `Renovou locação ${data.id.slice(0, 6)} até ${data.dataSaida}`,
+    categoria: "locacao",
+    detalhes: {
+      id: data.id,
+      prazoIndeterminado: data.prazoIndeterminado,
+      dataSaida: data.dataSaida ?? null,
+      valor: data.valor ?? null,
+    },
+  });
+  return result;
 }
 
 export async function returnRentalHandler(data: { id: string; inspection: InspectionIn }) {

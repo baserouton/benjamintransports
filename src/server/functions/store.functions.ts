@@ -331,6 +331,20 @@ export const deliverRentalFn = createServerFn({ method: "POST" })
     return deliverRentalHandler(data);
   });
 
+export const renewRentalFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      id: z.string().min(1).max(36),
+      prazoIndeterminado: z.boolean(),
+      dataSaida: dateSchema.optional(),
+      valor: z.number().nonnegative().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { renewRentalHandler } = await import("./store.handlers.server");
+    return renewRentalHandler(data);
+  });
+
 export const returnRentalFn = createServerFn({ method: "POST" })
   .validator(
     z.object({

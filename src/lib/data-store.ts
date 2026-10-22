@@ -16,6 +16,7 @@ export type {
   Maintenance,
   MaintenanceType,
   Rental,
+  RentalRenewal,
   RentalStatus,
   Store,
   TransferService,

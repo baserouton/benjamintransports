@@ -15,6 +15,7 @@ import type {
   InspectionIn,
   InspectionOut,
   JsonValue,
+  RentalRenewal,
   TransferServiceType,
 } from "@/domain/models";
 
@@ -114,6 +115,8 @@ export const rentals = mysqlTable(
     caucaoStatus: mysqlEnum("caucao_status", ["retido", "devolvido"]),
     vistoriaRetirada: json("vistoria_retirada").$type<InspectionOut>(),
     vistoriaDevolucao: json("vistoria_devolucao").$type<InspectionIn>(),
+    prazoIndeterminado: boolean("prazo_indeterminado").notNull().default(false),
+    renovacoes: json("renovacoes").$type<RentalRenewal[]>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },

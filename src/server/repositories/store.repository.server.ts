@@ -10,6 +10,7 @@ import {
   type InspectionOut,
   type Maintenance,
   type Rental,
+  type RentalRenewal,
   type Store,
   type TransferService,
   type Vehicle,
@@ -118,6 +119,8 @@ export async function findStore(): Promise<Store> {
       caucaoStatus: row.caucaoStatus ?? undefined,
       vistoriaRetirada: row.vistoriaRetirada ?? undefined,
       vistoriaDevolucao: row.vistoriaDevolucao ?? undefined,
+      prazoIndeterminado: Boolean(row.prazoIndeterminado),
+      renovacoes: row.renovacoes ?? undefined,
     })),
     transferServices: transferRows.map(({ createdAt: _c, ...row }) => ({
       ...row,
@@ -491,9 +494,10 @@ export async function insertRental(input: Omit<Rental, "id" | "status">) {
       ? applyUsdRates(input.seguroValor, input.moeda, rates)
       : null;
   await db.transaction(async (tx) => {
+    const { prazoIndeterminado, renovacoes, ...rentalFields } = input;
     await tx.insert(rentals).values({
       id,
-      ...input,
+      ...rentalFields,
       status: "pendente",
       seguroValor: input.seguroValor ?? null,
       seguroObs: input.seguroObs ?? null,
@@ -501,6 +505,8 @@ export async function insertRental(input: Omit<Rental, "id" | "status">) {
       caucaoStatus: input.caucaoValor ? "retido" : null,
       vistoriaRetirada: input.vistoriaRetirada ?? null,
       vistoriaDevolucao: input.vistoriaDevolucao ?? null,
+      prazoIndeterminado: prazoIndeterminado ?? false,
+      renovacoes: renovacoes ?? null,
     });
     await tx.update(vehicles).set({ disponivel: false }).where(eq(vehicles.id, input.veiculoId));
     const [vehicle] = await tx
@@ -829,6 +835,86 @@ export async function deleteFinanceEntry(id: string) {
   }
   await db.delete(financeEntries).where(eq(financeEntries.id, id));
   return { id };
+}
+
+export type RenewRentalInput = {
+  id: string;
+  prazoIndeterminado: boolean;
+  dataSaida?: string;
+  valor?: number;
+  usuario?: string;
+};
+
+export async function renewRental(input: RenewRentalInput) {
+  if (!input.prazoIndeterminado) {
+    if (!input.dataSaida) throw new Error("Informe a nova data de devolução");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dataSaida)) {
+      throw new Error("Data de devolução inválida");
+    }
+  }
+  if (input.valor != null && input.valor < 0) {
+    throw new Error("Informe um valor válido para a renovação");
+  }
+
+  const [rental] = await db.select().from(rentals).where(eq(rentals.id, input.id)).limit(1);
+  if (!rental) throw new Error("Locação não encontrada");
+  if (rental.status !== "entregue") {
+    throw new Error("Só é possível renovar locação em andamento");
+  }
+  if (!input.prazoIndeterminado && input.dataSaida && input.dataSaida < rental.dataRetirada) {
+    throw new Error("A nova devolução não pode ser antes da retirada");
+  }
+
+  const financeSnap =
+    input.valor != null && input.valor > 0
+      ? await snapshotUsd(input.valor, rental.moeda)
+      : null;
+
+  const renewal: RentalRenewal = {
+    quando: new Date().toISOString().slice(0, 19).replace("T", " "),
+    dataSaidaAnterior: rental.dataSaida,
+    dataSaidaNova: input.prazoIndeterminado ? null : (input.dataSaida ?? null),
+    prazoIndeterminado: input.prazoIndeterminado,
+    valor: input.valor && input.valor > 0 ? input.valor : undefined,
+    moeda: input.valor && input.valor > 0 ? rental.moeda : undefined,
+    usuario: input.usuario,
+  };
+  const historico = [...(rental.renovacoes ?? []), renewal];
+  const nextSaida = input.prazoIndeterminado ? rental.dataSaida : (input.dataSaida as string);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(rentals)
+      .set({
+        dataSaida: nextSaida,
+        prazoIndeterminado: input.prazoIndeterminado,
+        renovacoes: historico,
+        valorAluguel: input.valor && input.valor > 0 ? input.valor : rental.valorAluguel,
+      })
+      .where(eq(rentals.id, input.id));
+
+    if (financeSnap && input.valor && input.valor > 0) {
+      const [vehicle] = await tx
+        .select({ modelo: vehicles.modelo, placa: vehicles.placa })
+        .from(vehicles)
+        .where(eq(vehicles.id, rental.veiculoId))
+        .limit(1);
+      await tx.insert(financeEntries).values({
+        id: randomUUID(),
+        data: new Date().toISOString().slice(0, 10),
+        descricao: `Renovação aluguel — ${vehicle?.modelo ?? ""} ${vehicle?.placa ?? ""}`.trim(),
+        valor: input.valor,
+        moeda: rental.moeda,
+        tipo: "entrada",
+        categoria: "aluguel",
+        manual: false,
+        veiculoId: rental.veiculoId,
+        ...usdColumns(financeSnap),
+      });
+    }
+  });
+
+  return { id: input.id, ...renewal };
 }
 
 export async function insertActivityLog(input: Omit<ActivityLog, "id" | "quando">) {

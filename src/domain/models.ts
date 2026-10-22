@@ -260,6 +260,16 @@ export interface InspectionIn extends InspectionOut {
   taxa: number;
 }
 
+export interface RentalRenewal {
+  quando: string;
+  dataSaidaAnterior: string;
+  dataSaidaNova: string | null;
+  prazoIndeterminado: boolean;
+  valor?: number;
+  moeda?: Currency;
+  usuario?: string;
+}
+
 export interface Rental {
   id: string;
   veiculoId: string;
@@ -275,6 +285,8 @@ export interface Rental {
   caucaoStatus?: "retido" | "devolvido";
   vistoriaRetirada?: InspectionOut;
   vistoriaDevolucao?: InspectionIn;
+  prazoIndeterminado?: boolean;
+  renovacoes?: RentalRenewal[];
 }
 
 export interface Maintenance {
