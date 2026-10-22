@@ -1,12 +1,13 @@
-import type {
-  Client,
-  FinanceEntry,
-  InspectionIn,
-  InspectionOut,
-  Maintenance,
-  Rental,
-  TransferService,
-  Vehicle,
+import {
+  rentalTotalFromDaily,
+  type Client,
+  type FinanceEntry,
+  type InspectionIn,
+  type InspectionOut,
+  type Maintenance,
+  type Rental,
+  type TransferService,
+  type Vehicle,
 } from "@/domain/models";
 import {
   authenticate,
@@ -216,14 +217,23 @@ export async function updateClientHandler(
   return { id };
 }
 
-export async function createRentalHandler(data: Omit<Rental, "id" | "status">) {
+export async function createRentalHandler(
+  data: Omit<Rental, "id" | "status" | "valorAluguel" | "prazoIndeterminado" | "renovacoes"> & {
+    valorDiaria: number;
+  },
+) {
   const session = await requireSession();
-  const id = await insertRental(data);
+  if (data.dataSaida < data.dataRetirada) {
+    throw new Error("A devolução não pode ser antes da retirada");
+  }
+  const { valorDiaria, ...rest } = data;
+  const valorAluguel = rentalTotalFromDaily(valorDiaria, data.dataRetirada, data.dataSaida);
+  const id = await insertRental({ ...rest, valorAluguel });
   await insertActivityLog({
     usuario: session.login,
     acao: `Registrou locação ${id.slice(0, 6)} (${data.dataRetirada} → ${data.dataSaida})`,
     categoria: "locacao",
-    detalhes: { id },
+    detalhes: { id, valorDiaria, valorAluguel },
   });
   return { id };
 }

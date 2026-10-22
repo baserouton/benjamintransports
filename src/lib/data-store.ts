@@ -39,6 +39,8 @@ export {
   amountUsd,
   calcVehiclePayback,
   fmtMoney,
+  rentalBillableDays,
+  rentalTotalFromDaily,
   getComplianceExpiry,
   getVehicleOilStatus,
   listVehicleComplianceAlerts,

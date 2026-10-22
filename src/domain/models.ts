@@ -494,3 +494,22 @@ export function fmtMoney(value: number, currency: Currency) {
     maximumFractionDigits: 2,
   })}`;
 }
+
+/** Dias cobrados: 22→24 = 2; mesmo dia = 1. */
+export function rentalBillableDays(retirada: string, saida: string): number {
+  const start = parseIsoDateUtc(retirada);
+  const end = parseIsoDateUtc(saida);
+  if (!start || !end) return 1;
+  const days = Math.round((end - start) / 86_400_000);
+  return Math.max(1, days);
+}
+
+export function rentalTotalFromDaily(valorDiaria: number, retirada: string, saida: string): number {
+  return Math.round(valorDiaria * rentalBillableDays(retirada, saida) * 100) / 100;
+}
+
+function parseIsoDateUtc(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}

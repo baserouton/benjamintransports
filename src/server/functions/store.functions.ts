@@ -249,7 +249,7 @@ export const createRentalFn = createServerFn({ method: "POST" })
       clienteId: z.string().min(1).max(36),
       dataRetirada: dateSchema,
       dataSaida: dateSchema,
-      valorAluguel: z.number().nonnegative(),
+      valorDiaria: z.number().nonnegative(),
       moeda: currencySchema,
       seguroValor: z.number().nonnegative().optional(),
       seguroObs: optionalText(1000),

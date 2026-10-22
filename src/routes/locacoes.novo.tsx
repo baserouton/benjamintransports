@@ -3,7 +3,14 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
-import { notifyStoreChanged, useStore, type Currency } from "@/lib/data-store";
+import {
+  fmtMoney,
+  notifyStoreChanged,
+  rentalBillableDays,
+  rentalTotalFromDaily,
+  useStore,
+  type Currency,
+} from "@/lib/data-store";
 import { createRentalFn } from "@/server/functions/store.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +39,7 @@ export const Route = createFileRoute("/locacoes/novo")({
 });
 
 function NewRental() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const nav = useNavigate();
   const s = useStore();
   const [f, setF] = useState({
@@ -40,24 +47,31 @@ function NewRental() {
     clienteId: "",
     dataRetirada: new Date().toISOString().slice(0, 10),
     dataSaida: "",
-    valorAluguel: "" as number | "",
+    valorDiaria: "" as number | "",
     moeda: "USD" as Currency,
     seguroValor: "" as number | "",
     seguroObs: "",
     caucaoValor: "" as number | "",
   });
 
+  const dias =
+    f.dataRetirada && f.dataSaida ? rentalBillableDays(f.dataRetirada, f.dataSaida) : 0;
+  const total =
+    f.valorDiaria === "" || !f.dataRetirada || !f.dataSaida
+      ? null
+      : rentalTotalFromDaily(f.valorDiaria, f.dataRetirada, f.dataSaida);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!f.veiculoId || !f.clienteId || f.valorAluguel === "") {
-      toast.error("Preencha veículo, cliente e valor do aluguel.");
+    if (!f.veiculoId || !f.clienteId || f.valorDiaria === "" || !f.dataSaida) {
+      toast.error("Preencha veículo, cliente, diária e as datas.");
       return;
     }
     try {
       await createRentalFn({
         data: {
           ...f,
-          valorAluguel: f.valorAluguel,
+          valorDiaria: f.valorDiaria,
           seguroValor: f.seguroValor === "" ? undefined : f.seguroValor,
           seguroObs: f.seguroObs || undefined,
           caucaoValor: f.caucaoValor === "" ? undefined : f.caucaoValor,
@@ -132,16 +146,34 @@ function NewRental() {
                 <p className="text-xs text-muted-foreground">Data prevista para o carro voltar à locadora.</p>
               </div>
               <div className="space-y-1.5">
-                <Label>{t("price")}</Label>
+                <Label>{t("dailyRate")}</Label>
                 <Input
                   type="number"
                   step="0.01"
-                  value={f.valorAluguel}
+                  min="0"
+                  value={f.valorDiaria}
                   onChange={(e) =>
-                    setF({ ...f, valorAluguel: e.target.value === "" ? "" : Number(e.target.value) })
+                    setF({ ...f, valorDiaria: e.target.value === "" ? "" : Number(e.target.value) })
                   }
-                  placeholder="Ex.: 250,00"
+                  placeholder="Ex.: 50,00"
                   required
+                />
+                <p className="text-xs text-muted-foreground">
+                  {total == null
+                    ? lang === "pt"
+                      ? "Informe a diária e as datas para calcular o total."
+                      : "Vul dagtarief en data in om het totaal te berekenen."
+                    : `${fmtMoney(f.valorDiaria as number, f.moeda)} × ${dias} ${
+                        lang === "pt" ? (dias === 1 ? "dia" : "dias") : dias === 1 ? "dag" : "dagen"
+                      } = ${fmtMoney(total, f.moeda)}`}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("rentalTotal")}</Label>
+                <Input
+                  value={total == null ? "—" : fmtMoney(total, f.moeda)}
+                  readOnly
+                  className="bg-muted font-mono tabular-nums"
                 />
               </div>
               <div className="space-y-1.5">
