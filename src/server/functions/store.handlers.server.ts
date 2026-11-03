@@ -25,7 +25,9 @@ import {
   insertFinanceEntry,
   insertMaintenance,
   insertRental,
+  deleteTransferService,
   insertTransferService,
+  updateTransferService,
   insertVehicle,
   registerOilChange,
   renewRental,
@@ -337,6 +339,35 @@ export async function createTransferServiceHandler(data: Omit<TransferService, "
     detalhes: { id, veiculoId: data.veiculoId, valor: data.valor, moeda: data.moeda },
   });
   return { id };
+}
+
+export async function updateTransferServiceHandler(
+  data: { id: string } & Omit<TransferService, "id">,
+) {
+  const session = await requireSession();
+  requireFinanceAccess(session.login);
+  const { id, ...input } = data;
+  await updateTransferService(id, input);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Editou Translato ${id.slice(0, 6)} (${input.tipoServico}) para ${input.destino}`,
+    categoria: "translato",
+    detalhes: { id, veiculoId: input.veiculoId, valor: input.valor, moeda: input.moeda },
+  });
+  return { id };
+}
+
+export async function deleteTransferServiceHandler(data: { id: string }) {
+  const session = await requireSession();
+  requireFinanceAccess(session.login);
+  await deleteTransferService(data.id);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Excluiu Translato ${data.id.slice(0, 6)}`,
+    categoria: "translato",
+    detalhes: { id: data.id },
+  });
+  return { id: data.id };
 }
 
 export async function createFinanceEntryHandler(

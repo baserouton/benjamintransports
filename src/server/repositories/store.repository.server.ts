@@ -807,6 +807,124 @@ export async function insertTransferService(input: Omit<TransferService, "id">) 
   return id;
 }
 
+async function findLinkedTranslatoFinance(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  service: Pick<TransferService, "veiculoId" | "data" | "valor" | "destino">,
+) {
+  const rows = await tx
+    .select({
+      id: financeEntries.id,
+      valor: financeEntries.valor,
+      descricao: financeEntries.descricao,
+    })
+    .from(financeEntries)
+    .where(
+      and(
+        eq(financeEntries.categoria, "translato"),
+        eq(financeEntries.veiculoId, service.veiculoId),
+        eq(financeEntries.data, service.data),
+        eq(financeEntries.manual, false),
+      ),
+    );
+  const byDestino = rows.filter(
+    (row) =>
+      Number(row.valor) === Number(service.valor) && row.descricao.includes(service.destino),
+  );
+  if (byDestino[0]) return byDestino[0];
+  return rows.find((row) => Number(row.valor) === Number(service.valor)) ?? rows[0] ?? null;
+}
+
+export async function updateTransferService(
+  id: string,
+  input: Omit<TransferService, "id">,
+) {
+  const [existing] = await db
+    .select()
+    .from(transferServices)
+    .where(eq(transferServices.id, id))
+    .limit(1);
+  if (!existing) throw new Error("Serviço avulso não encontrado");
+
+  const [vehicle] = await db
+    .select({
+      id: vehicles.id,
+      modelo: vehicles.modelo,
+      placa: vehicles.placa,
+      disponivel: vehicles.disponivel,
+      oculto: vehicles.oculto,
+    })
+    .from(vehicles)
+    .where(eq(vehicles.id, input.veiculoId))
+    .limit(1);
+  if (!vehicle) throw new Error("Veículo não encontrado");
+  if (vehicle.oculto) throw new Error("Veículo oculto não pode ser usado no Translato");
+  if (input.veiculoId !== existing.veiculoId && !vehicle.disponivel) {
+    throw new Error("Só é possível trocar para um veículo disponível");
+  }
+
+  const tipoLabel = TRANSFER_SERVICE_TYPE_LABELS[input.tipoServico] ?? input.tipoServico;
+  const snap = await snapshotUsd(input.valor, input.moeda);
+  const destino = input.destino.trim();
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(transferServices)
+      .set({
+        veiculoId: input.veiculoId,
+        tipoServico: input.tipoServico,
+        destino,
+        data: input.data,
+        valor: input.valor,
+        moeda: input.moeda,
+        clienteNome: input.clienteNome?.trim() || null,
+        obs: input.obs?.trim() || null,
+      })
+      .where(eq(transferServices.id, id));
+
+    const linked = await findLinkedTranslatoFinance(tx, {
+      veiculoId: existing.veiculoId,
+      data: existing.data,
+      valor: existing.valor,
+      destino: existing.destino,
+    });
+    const financeValues = {
+      data: input.data,
+      descricao: `Serviço avulso — ${tipoLabel} → ${destino} — ${vehicle.placa}`,
+      valor: input.valor,
+      moeda: input.moeda,
+      tipo: "entrada" as const,
+      categoria: "translato" as const,
+      manual: false,
+      veiculoId: input.veiculoId,
+      ...usdColumns(snap),
+    };
+    if (linked) {
+      await tx.update(financeEntries).set(financeValues).where(eq(financeEntries.id, linked.id));
+    } else {
+      await tx.insert(financeEntries).values({ id: randomUUID(), ...financeValues });
+    }
+  });
+  return { id };
+}
+
+export async function deleteTransferService(id: string) {
+  const [existing] = await db
+    .select()
+    .from(transferServices)
+    .where(eq(transferServices.id, id))
+    .limit(1);
+  if (!existing) throw new Error("Serviço avulso não encontrado");
+
+  await db.transaction(async (tx) => {
+    const linked = await findLinkedTranslatoFinance(tx, existing);
+    if (linked) {
+      await tx.delete(financeEntries).where(eq(financeEntries.id, linked.id));
+    }
+    await tx.delete(transferServices).where(eq(transferServices.id, id));
+  });
+  return { id };
+}
+
 export async function insertFinanceEntry(
   input: Omit<FinanceEntry, "id" | "manual" | "valorUsd" | "taxaUsd" | "cotacaoEm" | "cotacaoFonte"> & {
     manual?: boolean;

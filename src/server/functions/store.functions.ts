@@ -367,27 +367,36 @@ export const returnRentalFn = createServerFn({ method: "POST" })
     return returnRentalHandler(data);
   });
 
+const transferServiceFields = {
+  veiculoId: z.string().min(1).max(36),
+  tipoServico: z.enum(["aeroporto_hotel", "hotel_aeroporto", "ponto_a_ponto", "outro"]),
+  destino: z.string().trim().min(1).max(300),
+  data: dateSchema,
+  valor: z.number().positive(),
+  moeda: currencySchema,
+  clienteNome: optionalText(180),
+  obs: optionalText(2000),
+};
+
 export const createTransferServiceFn = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      veiculoId: z.string().min(1).max(36),
-      tipoServico: z.enum([
-        "aeroporto_hotel",
-        "hotel_aeroporto",
-        "ponto_a_ponto",
-        "outro",
-      ]),
-      destino: z.string().trim().min(1).max(300),
-      data: dateSchema,
-      valor: z.number().positive(),
-      moeda: currencySchema,
-      clienteNome: optionalText(180),
-      obs: optionalText(2000),
-    }),
-  )
+  .validator(z.object(transferServiceFields))
   .handler(async ({ data }) => {
     const { createTransferServiceHandler } = await import("./store.handlers.server");
     return createTransferServiceHandler(data);
+  });
+
+export const updateTransferServiceFn = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string().min(1).max(36), ...transferServiceFields }))
+  .handler(async ({ data }) => {
+    const { updateTransferServiceHandler } = await import("./store.handlers.server");
+    return updateTransferServiceHandler(data);
+  });
+
+export const deleteTransferServiceFn = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string().min(1).max(36) }))
+  .handler(async ({ data }) => {
+    const { deleteTransferServiceHandler } = await import("./store.handlers.server");
+    return deleteTransferServiceHandler(data);
   });
 
 export const createFinanceEntryFn = createServerFn({ method: "POST" })
