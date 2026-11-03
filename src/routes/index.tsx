@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Car, Users, ClipboardList, Wallet, AlertCircle, TrendingUp } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import { useStore, amountUsd, fmtMoney } from "@/lib/data-store";
+import { useStore, amountUsd, canViewFinance, fmtMoney } from "@/lib/data-store";
+import { useCurrentUser } from "@/lib/current-user";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +30,9 @@ export const Route = createFileRoute("/")({
 
 function Dashboard() {
   const { t } = useI18n();
+  const { user } = useCurrentUser();
   const s = useStore();
+  const showFinance = canViewFinance(user?.login);
   const totalVehicles = s.vehicles.filter((v) => !v.oculto).length;
   const activeRentals = s.rentals.filter((r) => r.status !== "devolvido").length;
   const now = new Date();
@@ -54,7 +57,9 @@ function Dashboard() {
   const stats = [
     { label: t("totalVehicles"), value: totalVehicles, icon: Car },
     { label: t("activeRentals"), value: activeRentals, icon: ClipboardList },
-    { label: t("monthlyRevenue"), value: fmtMoney(monthEntries, "USD"), icon: TrendingUp },
+    ...(showFinance
+      ? [{ label: t("monthlyRevenue"), value: fmtMoney(monthEntries, "USD"), icon: TrendingUp }]
+      : []),
     { label: t("pendingDocs"), value: pendingDocs, icon: AlertCircle },
   ];
 
@@ -77,7 +82,8 @@ function Dashboard() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className={`grid gap-4 ${showFinance ? "lg:grid-cols-3" : ""}`}>
+        {showFinance && (
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">{t("revenueByVehicle")}</CardTitle>
@@ -103,6 +109,7 @@ function Dashboard() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         <Card>
           <CardHeader>

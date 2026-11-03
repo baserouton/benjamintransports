@@ -30,17 +30,21 @@ import {
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useI18n } from "@/lib/i18n";
+import { canViewFinance } from "@/lib/data-store";
+import { useCurrentUser } from "@/lib/current-user";
 
 export function AppSidebar() {
   const { t } = useI18n();
+  const { user } = useCurrentUser();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const showFinance = canViewFinance(user?.login);
 
   const main = [
     { title: t("dashboard"), url: "/", icon: LayoutDashboard },
     { title: t("vehicles"), url: "/veiculos", icon: Car },
     { title: t("clients"), url: "/clientes", icon: Users },
     { title: t("maintenance"), url: "/manutencao", icon: Wrench },
-    { title: t("finance"), url: "/financeiro", icon: Wallet },
+    ...(showFinance ? [{ title: t("finance"), url: "/financeiro", icon: Wallet }] : []),
   ];
   const admin = [
     { title: t("users"), url: "/usuarios", icon: UserCog },

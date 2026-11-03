@@ -38,6 +38,7 @@ export {
   TRANSFER_SERVICE_TYPE_LABELS,
   amountUsd,
   calcVehiclePayback,
+  canViewFinance,
   fmtMoney,
   rentalBillableDays,
   rentalTotalFromDaily,

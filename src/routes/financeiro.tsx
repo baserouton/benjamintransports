@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -7,6 +7,7 @@ import {
   useStore,
   notifyStoreChanged,
   amountUsd,
+  canViewFinance,
   fmtMoney,
   calcVehiclePayback,
   FINANCE_CATEGORIES,
@@ -17,6 +18,7 @@ import {
 import {
   createFinanceEntryFn,
   deleteFinanceEntryFn,
+  getCurrentUserFn,
 } from "@/server/functions/store.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -64,6 +66,12 @@ type TypeFilter = "all" | "entrada" | "despesa";
 type CategoryFilter = FinanceCategory | "all";
 
 export const Route = createFileRoute("/financeiro")({
+  beforeLoad: async () => {
+    const user = await getCurrentUserFn();
+    if (!canViewFinance(user?.login)) {
+      throw redirect({ to: "/" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "Financeiro — Locadora Admin" },

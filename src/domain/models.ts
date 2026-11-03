@@ -453,6 +453,12 @@ export interface UserAccount {
   ativo: boolean;
 }
 
+export const FINANCE_ONLY_LOGIN = "admin1";
+
+export function canViewFinance(login?: string | null): boolean {
+  return login?.trim().toLowerCase() === FINANCE_ONLY_LOGIN;
+}
+
 export interface ActivityLog {
   id: string;
   quando: string;

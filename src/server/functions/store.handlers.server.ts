@@ -1,4 +1,5 @@
 import {
+  canViewFinance,
   rentalTotalFromDaily,
   type Client,
   type FinanceEntry,
@@ -76,8 +77,16 @@ export async function currentUserHandler() {
 }
 
 export async function storeHandler() {
-  await requireSession();
-  return findStore();
+  const session = await requireSession();
+  const store = await findStore();
+  if (canViewFinance(session.login)) return store;
+  return { ...store, finance: [] };
+}
+
+function requireFinanceAccess(login: string) {
+  if (!canViewFinance(login)) {
+    throw new Error("Sem permissão para o financeiro");
+  }
 }
 
 export async function createVehicleHandler(data: Omit<Vehicle, "id">) {
@@ -334,6 +343,7 @@ export async function createFinanceEntryHandler(
   data: Omit<FinanceEntry, "id" | "manual" | "valorUsd" | "taxaUsd" | "cotacaoEm" | "cotacaoFonte">,
 ) {
   const session = await requireSession();
+  requireFinanceAccess(session.login);
   const result = await insertFinanceEntry({ ...data, manual: true });
   await insertActivityLog({
     usuario: session.login,
@@ -353,6 +363,7 @@ export async function createFinanceEntryHandler(
 
 export async function deleteFinanceEntryHandler(data: { id: string }) {
   const session = await requireSession();
+  requireFinanceAccess(session.login);
   await deleteFinanceEntry(data.id);
   await insertActivityLog({
     usuario: session.login,
