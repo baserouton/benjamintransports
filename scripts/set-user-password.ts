@@ -11,8 +11,8 @@ if (!login || !password) {
   throw new Error("Informe ADMIN_LOGIN e ADMIN_PASSWORD");
 }
 
-if (password.length < 8) {
-  throw new Error("A senha deve ter pelo menos 8 caracteres");
+if (password.length < 6) {
+  throw new Error("A senha deve ter pelo menos 6 caracteres");
 }
 
 const passwordHash = await hashPassword(password);

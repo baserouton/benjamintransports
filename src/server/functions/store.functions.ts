@@ -20,7 +20,7 @@ export const loginFn = createServerFn({ method: "POST" })
   .validator(
     z.object({
       login: z.string().trim().min(1).max(80),
-      password: z.string().min(8).max(200),
+      password: z.string().min(6).max(200),
     }),
   )
   .handler(async ({ data }) => {
