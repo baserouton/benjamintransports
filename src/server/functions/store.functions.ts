@@ -323,6 +323,7 @@ export const deliverRentalFn = createServerFn({ method: "POST" })
         obs: z.string().max(2000),
         km: z.number().int().nonnegative(),
         kmFotoUrl: z.string().min(1).max(500),
+        fotos: z.array(z.string().min(1).max(500)).min(1).max(10),
       }),
     }),
   )
@@ -357,6 +358,7 @@ export const returnRentalFn = createServerFn({ method: "POST" })
         taxa: z.number().nonnegative(),
         km: z.number().int().nonnegative(),
         kmFotoUrl: z.string().min(1).max(500),
+        fotos: z.array(z.string().min(1).max(500)).min(1).max(10),
       }),
     }),
   )

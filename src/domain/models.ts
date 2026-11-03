@@ -254,6 +254,8 @@ export interface InspectionOut {
   km?: number;
   /** Foto do painel / odômetro. */
   kmFotoUrl?: string;
+  /** Fotos do veículo no momento da vistoria (frente, laterais, etc.). */
+  fotos?: string[];
 }
 
 export interface InspectionIn extends InspectionOut {

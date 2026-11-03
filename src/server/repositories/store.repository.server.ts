@@ -662,6 +662,9 @@ export async function deliverRental(id: string, inspection: InspectionOut) {
   if (!inspection.kmFotoUrl?.trim()) {
     throw new Error("Anexe a foto do odômetro na retirada");
   }
+  if (!inspection.fotos?.length) {
+    throw new Error("Anexe ao menos uma foto do veículo na retirada");
+  }
   await db.transaction(async (tx) => {
     const [rental] = await tx
       .select({
@@ -702,6 +705,9 @@ export async function returnRental(id: string, inspection: InspectionIn) {
   }
   if (!inspection.kmFotoUrl?.trim()) {
     throw new Error("Anexe a foto do odômetro na devolução");
+  }
+  if (!inspection.fotos?.length) {
+    throw new Error("Anexe ao menos uma foto do veículo na devolução");
   }
   const rates = inspection.taxa > 0 ? await getUsdRates() : null;
   await db.transaction(async (tx) => {

@@ -89,6 +89,8 @@ function RentalDetail() {
     km: "" as number | "",
   });
   const [inPhoto, setInPhoto] = useState<{ file: File; preview: string } | null>(null);
+  const [outCarPhotos, setOutCarPhotos] = useState<{ file: File; preview: string }[]>([]);
+  const [inCarPhotos, setInCarPhotos] = useState<{ file: File; preview: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [renewOpen, setRenewOpen] = useState(false);
   const [renewIndefinite, setRenewIndefinite] = useState(false);
@@ -155,12 +157,18 @@ function RentalDetail() {
       toast.error("Anexe a foto do odômetro na retirada.");
       return;
     }
+    if (outCarPhotos.length === 0) {
+      toast.error("Anexe ao menos uma foto do veículo na retirada.");
+      return;
+    }
     setBusy(true);
     try {
-      const image = await fileToDataUrl(outPhoto.file);
-      const uploaded = await uploadVehiclePhotosFn({ data: { images: [image] } });
+      const odoImage = await fileToDataUrl(outPhoto.file);
+      const carImages = await Promise.all(outCarPhotos.map((p) => fileToDataUrl(p.file)));
+      const uploaded = await uploadVehiclePhotosFn({ data: { images: [odoImage, ...carImages] } });
       const kmFotoUrl = uploaded.urls[0];
-      if (!kmFotoUrl) throw new Error("Falha no upload da foto do odômetro");
+      const fotos = uploaded.urls.slice(1);
+      if (!kmFotoUrl || fotos.length === 0) throw new Error("Falha no upload das fotos da retirada");
       await deliverRentalFn({
         data: {
           id: r.id,
@@ -171,13 +179,16 @@ function RentalDetail() {
             obs: outInsp.obs,
             km: Number(outInsp.km),
             kmFotoUrl,
+            fotos,
           },
         },
       });
       notifyStoreChanged();
       toast.success(t("delivered"));
-      if (outPhoto) URL.revokeObjectURL(outPhoto.preview);
+      URL.revokeObjectURL(outPhoto.preview);
+      outCarPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
       setOutPhoto(null);
+      setOutCarPhotos([]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível atualizar a locação");
     } finally {
@@ -194,12 +205,18 @@ function RentalDetail() {
       toast.error("Anexe a foto do odômetro na devolução.");
       return;
     }
+    if (inCarPhotos.length === 0) {
+      toast.error("Anexe ao menos uma foto do veículo na devolução.");
+      return;
+    }
     setBusy(true);
     try {
-      const image = await fileToDataUrl(inPhoto.file);
-      const uploaded = await uploadVehiclePhotosFn({ data: { images: [image] } });
+      const odoImage = await fileToDataUrl(inPhoto.file);
+      const carImages = await Promise.all(inCarPhotos.map((p) => fileToDataUrl(p.file)));
+      const uploaded = await uploadVehiclePhotosFn({ data: { images: [odoImage, ...carImages] } });
       const kmFotoUrl = uploaded.urls[0];
-      if (!kmFotoUrl) throw new Error("Falha no upload da foto do odômetro");
+      const fotos = uploaded.urls.slice(1);
+      if (!kmFotoUrl || fotos.length === 0) throw new Error("Falha no upload das fotos da devolução");
       await returnRentalFn({
         data: {
           id: r.id,
@@ -211,13 +228,16 @@ function RentalDetail() {
             taxa: insp.taxa,
             km: Number(insp.km),
             kmFotoUrl,
+            fotos,
           },
         },
       });
       notifyStoreChanged();
       toast.success(t("returned"));
-      if (inPhoto) URL.revokeObjectURL(inPhoto.preview);
+      URL.revokeObjectURL(inPhoto.preview);
+      inCarPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
       setInPhoto(null);
+      setInCarPhotos([]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível fechar a locação");
     } finally {
@@ -265,8 +285,8 @@ function RentalDetail() {
       icon: CheckCircle2,
       text:
         lang === "pt"
-          ? "Preencha a vistoria de retirada com km e foto do odômetro"
-          : "Vul de uitgifte-inspectie in met km en foto van de kilometerteller",
+          ? "Preencha a vistoria de retirada com km, foto do odômetro e fotos do carro"
+          : "Vul de uitgifte-inspectie in met km, tellerfoto en foto's van de auto",
       tone: "primary",
     });
     nextSteps.push({
@@ -587,6 +607,30 @@ function RentalDetail() {
             )}
           </ol>
 
+          {(r.vistoriaRetirada?.kmFotoUrl ||
+            (r.vistoriaRetirada?.fotos?.length ?? 0) > 0 ||
+            r.vistoriaDevolucao?.kmFotoUrl ||
+            (r.vistoriaDevolucao?.fotos?.length ?? 0) > 0) && (
+            <div className="mt-6 space-y-5">
+              {r.vistoriaRetirada && (
+                <InspectionPhotoGallery
+                  title={t("inspectionOut")}
+                  kmFotoUrl={r.vistoriaRetirada.kmFotoUrl}
+                  fotos={r.vistoriaRetirada.fotos}
+                  kmLabel={lang === "pt" ? "Odômetro" : "Teller"}
+                />
+              )}
+              {r.vistoriaDevolucao && (
+                <InspectionPhotoGallery
+                  title={t("inspectionIn")}
+                  kmFotoUrl={r.vistoriaDevolucao.kmFotoUrl}
+                  fotos={r.vistoriaDevolucao.fotos}
+                  kmLabel={lang === "pt" ? "Odômetro" : "Teller"}
+                />
+              )}
+            </div>
+          )}
+
           {vehicleMaint.length > 0 && (
             <div className="mt-6">
               <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">
@@ -671,8 +715,8 @@ function RentalDetail() {
             </div>
             <div className="text-sm text-muted-foreground mt-0.5">
               {lang === "pt"
-                ? "Checklist, quilometragem e foto do odômetro para entregar o veículo"
-                : "Checklist, kilometerstand en foto van de teller om het voertuig af te leveren"}
+                ? "Checklist, km, foto do odômetro e fotos do carro antes de entregar"
+                : "Checklist, km, tellerfoto en foto's van de auto vóór aflevering"}
             </div>
             {v?.kmAtual != null && (
               <p className="text-xs text-muted-foreground mt-2">
@@ -732,6 +776,16 @@ function RentalDetail() {
               photo={outPhoto}
               onChange={setOutPhoto}
             />
+            <InspectionPhotosField
+              label={t("vehiclePhotos")}
+              hint={
+                lang === "pt"
+                  ? "Frente, laterais, traseira e interior · até 8 fotos"
+                  : "Voor, zijkanten, achter en interieur · max. 8 foto's"
+              }
+              photos={outCarPhotos}
+              onChange={setOutCarPhotos}
+            />
             <div className="flex justify-end">
               <Button onClick={markDelivered} disabled={busy}>
                 {busy
@@ -756,8 +810,8 @@ function RentalDetail() {
               </div>
               <div className="text-sm text-muted-foreground mt-0.5">
                 {lang === "pt"
-                  ? "Complete a checklist, km e foto do odômetro para fechar a locação"
-                  : "Vul checklist, km en tellerfoto in om de verhuur af te sluiten"}
+                  ? "Checklist, km, foto do odômetro e fotos do carro na devolução"
+                  : "Checklist, km, tellerfoto en foto's van de auto bij retour"}
               </div>
               {(r.vistoriaRetirada?.km != null || v?.kmAtual != null) && (
                 <p className="text-xs text-muted-foreground mt-2">
@@ -826,6 +880,16 @@ function RentalDetail() {
               label={lang === "pt" ? "Foto do odômetro" : "Foto kilometerteller"}
               photo={inPhoto}
               onChange={setInPhoto}
+            />
+            <InspectionPhotosField
+              label={t("vehiclePhotos")}
+              hint={
+                lang === "pt"
+                  ? "Frente, laterais, traseira e interior · até 8 fotos"
+                  : "Voor, zijkanten, achter en interieur · max. 8 foto's"
+              }
+              photos={inCarPhotos}
+              onChange={setInCarPhotos}
             />
             <div className="flex justify-end">
               <Button onClick={closeRental} disabled={busy}>
@@ -900,6 +964,113 @@ function RentalDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+const MAX_INSPECTION_PHOTOS = 8;
+
+function InspectionPhotosField({
+  label,
+  hint,
+  photos,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  photos: { file: File; preview: string }[];
+  onChange: (next: { file: File; preview: string }[]) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {photos.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {photos.map((photo, i) => (
+            <div key={photo.preview} className="relative">
+              <img
+                src={photo.preview}
+                alt=""
+                className="aspect-video w-full object-cover rounded-md border border-border"
+              />
+              <button
+                type="button"
+                className="absolute top-1 right-1 h-6 w-6 rounded-full bg-foreground text-background grid place-items-center"
+                onClick={() => {
+                  URL.revokeObjectURL(photo.preview);
+                  onChange(photos.filter((_, idx) => idx !== i));
+                }}
+                aria-label="Remover foto"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {photos.length < MAX_INSPECTION_PHOTOS && (
+        <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-border p-4 cursor-pointer hover:bg-muted/40">
+          <Upload className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground text-center">{hint}</span>
+          <input
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith("image/"));
+              e.target.value = "";
+              const room = MAX_INSPECTION_PHOTOS - photos.length;
+              const added = files.slice(0, room).map((file) => ({
+                file,
+                preview: URL.createObjectURL(file),
+              }));
+              if (added.length) onChange([...photos, ...added]);
+            }}
+          />
+        </label>
+      )}
+    </div>
+  );
+}
+
+function InspectionPhotoGallery({
+  title,
+  kmFotoUrl,
+  fotos,
+  kmLabel,
+}: {
+  title: string;
+  kmFotoUrl?: string;
+  fotos?: string[];
+  kmLabel: string;
+}) {
+  const carFotos = fotos ?? [];
+  if (!kmFotoUrl && carFotos.length === 0) return null;
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">{title}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {kmFotoUrl && (
+          <a href={kmFotoUrl} target="_blank" rel="noreferrer" className="block">
+            <img
+              src={kmFotoUrl}
+              alt={kmLabel}
+              className="aspect-video w-full object-cover rounded-md border border-border"
+            />
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">{kmLabel}</div>
+          </a>
+        )}
+        {carFotos.map((url) => (
+          <a key={url} href={url} target="_blank" rel="noreferrer" className="block">
+            <img
+              src={url}
+              alt=""
+              className="aspect-video w-full object-cover rounded-md border border-border"
+            />
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
