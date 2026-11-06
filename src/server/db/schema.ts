@@ -117,6 +117,8 @@ export const rentals = mysqlTable(
     vistoriaDevolucao: json("vistoria_devolucao").$type<InspectionIn>(),
     prazoIndeterminado: boolean("prazo_indeterminado").notNull().default(false),
     renovacoes: json("renovacoes").$type<RentalRenewal[]>(),
+    contratoAssinaturaUrl: varchar("contrato_assinatura_url", { length: 500 }),
+    contratoAssinadoEm: timestamp("contrato_assinado_em"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },

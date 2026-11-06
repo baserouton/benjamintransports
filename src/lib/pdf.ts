@@ -5,38 +5,12 @@ import { fmtMoney } from "./data-store";
 
 type Lang = "pt" | "nl";
 
+const COMPANY = "BENJAMIN TRANSPORT N.V.";
+const COMPANY_ADDRESS = "Copernicusstraat 173, Paramaribo, Suriname";
+const COMPANY_KKF = "87747";
+
 const L = {
   pt: {
-    contractTitle: "CONTRATO DE LOCAÇÃO DE VEÍCULO",
-    company: "Locadora Admin — Paramaribo, Suriname",
-    parties: "PARTES",
-    locadora: "LOCADORA",
-    locatario: "LOCATÁRIO(A)",
-    vehicle: "VEÍCULO",
-    model: "Modelo",
-    plate: "Placa",
-    category: "Categoria",
-    year: "Ano",
-    terms: "CONDIÇÕES DA LOCAÇÃO",
-    withdraw: "Data de retirada",
-    ret: "Data de devolução",
-    price: "Valor do aluguel",
-    insurance: "Seguro adicional",
-    deposit: "Caução",
-    currency: "Moeda",
-    clauses: "CLÁUSULAS",
-    c1: "1. O(A) LOCATÁRIO(A) declara receber o veículo em perfeitas condições de uso, conforme vistoria de retirada anexa.",
-    c2: "2. É de responsabilidade do(a) LOCATÁRIO(A) o abastecimento, limpeza e conservação do veículo durante o período de locação.",
-    c3: "3. A devolução deverá ocorrer na data acordada, com tanque cheio e sem avarias. Em caso de não conformidade, será aplicada taxa adicional.",
-    c4: "4. A caução será devolvida integralmente após vistoria de devolução, salvo desconto de avarias, multas ou taxas devidas.",
-    c5: "5. Em caso de sinistro, o(a) LOCATÁRIO(A) deverá comunicar a LOCADORA em até 24 horas.",
-    sign: "ASSINATURAS",
-    date: "Paramaribo, ______ de ______________ de ______",
-    sigLocadora: "LOCADORA",
-    sigLocatario: "LOCATÁRIO(A)",
-    doc: "Doc.",
-    address: "Endereço",
-    whatsapp: "WhatsApp",
     pendingTitle: "DOCUMENTO PENDENTE",
     pendingIntro: "Este documento aguarda ação da administração.",
     status: "Situação",
@@ -44,36 +18,6 @@ const L = {
     ref: "Referência",
   },
   nl: {
-    contractTitle: "HUURCONTRACT VOERTUIG",
-    company: "Verhuur Admin — Paramaribo, Suriname",
-    parties: "PARTIJEN",
-    locadora: "VERHUURDER",
-    locatario: "HUURDER",
-    vehicle: "VOERTUIG",
-    model: "Model",
-    plate: "Kenteken",
-    category: "Categorie",
-    year: "Jaar",
-    terms: "VOORWAARDEN",
-    withdraw: "Ophaaldatum",
-    ret: "Retourdatum",
-    price: "Huurbedrag",
-    insurance: "Aanvullende verzekering",
-    deposit: "Borg",
-    currency: "Valuta",
-    clauses: "CLAUSULES",
-    c1: "1. De HUURDER verklaart het voertuig in perfecte staat te hebben ontvangen, volgens bijgevoegde uitgifte-inspectie.",
-    c2: "2. De HUURDER is verantwoordelijk voor brandstof, reiniging en onderhoud tijdens de huurperiode.",
-    c3: "3. Retour dient plaats te vinden op de afgesproken datum, met volle tank en zonder schade. Bij non-conformiteit wordt een boete opgelegd.",
-    c4: "4. De borg wordt volledig terugbetaald na retour-inspectie, behoudens aftrek van schade, boetes of verschuldigde kosten.",
-    c5: "5. Bij een ongeval dient de HUURDER de VERHUURDER binnen 24 uur te informeren.",
-    sign: "HANDTEKENINGEN",
-    date: "Paramaribo, ______ ______________ ______",
-    sigLocadora: "VERHUURDER",
-    sigLocatario: "HUURDER",
-    doc: "Doc.",
-    address: "Adres",
-    whatsapp: "WhatsApp",
     pendingTitle: "OPENSTAAND DOCUMENT",
     pendingIntro: "Dit document wacht op actie van de administratie.",
     status: "Status",
@@ -114,64 +58,199 @@ function kv(doc: jsPDF, y: number, k: string, v: string) {
   return y + 5;
 }
 
-export function generateContractPDF(
+function formatDate(iso: string) {
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+function wrap(doc: jsPDF, text: string, y: number, size = 7.4) {
+  doc.setFontSize(size);
+  const lines = doc.splitTextToSize(text, 178) as string[];
+  doc.text(lines, 17, y);
+  return y + lines.length * 3.4 + 0.8;
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Falha ao carregar a assinatura"));
+    img.src = src;
+  });
+}
+
+export async function generateContractPDF(
   rental: Rental,
   vehicle: Vehicle | undefined,
   client: Client | undefined,
-  lang: Lang = "pt"
+  lang: Lang = "pt",
 ) {
-  const l = L[lang];
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  header(doc, l.contractTitle, l.company);
-  let y = 30;
+  doc.setFillColor(20, 20, 20);
+  doc.rect(0, 0, 210, 18, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("CONTRATO DE ALUGUEL DE VEÍCULOS / HUURCONTRACT VOOR VOERTUIGEN", 15, 11);
+  doc.setTextColor(0, 0, 0);
 
-  y = section(doc, y, l.parties);
-  y = kv(doc, y, l.locadora, l.company);
-  y = kv(doc, y, l.locatario, client?.nome ?? "—");
-  y = kv(doc, y, `${l.doc} (RG/CPF)`, `${client?.rg ?? "—"} / ${client?.cpf ?? "—"}`);
-  y = kv(doc, y, l.address, client?.endereco ?? "—");
-  y = kv(doc, y, l.whatsapp, client?.whatsapp ?? "—");
-  y += 2;
+  let y = 24;
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+  doc.text("LOCADOR / VERHUURDER:", 15, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(COMPANY, 62, y);
+  y += 4.5;
+  doc.setFont("helvetica", "bold");
+  doc.text("ENDEREÇO / ADRES:", 15, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(COMPANY_ADDRESS, 62, y);
+  y += 4.5;
+  doc.setFont("helvetica", "bold");
+  doc.text("KKF:", 15, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(COMPANY_KKF, 62, y);
+  y += 6;
 
-  y = section(doc, y, l.vehicle);
-  y = kv(doc, y, l.model, vehicle?.modelo ?? "—");
-  y = kv(doc, y, l.plate, vehicle?.placa ?? "—");
-  y = kv(doc, y, l.category, vehicle?.categoria ?? "—");
-  y = kv(doc, y, l.year, vehicle?.ano ? String(vehicle.ano) : "—");
-  y += 2;
+  doc.setFont("helvetica", "bold");
+  doc.text("LOCATÁRIO / HUURDER:", 15, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(client?.nome ?? "—", 62, y);
+  y += 4.5;
+  doc.setFont("helvetica", "bold");
+  doc.text("DOCUMENTO / IDENTITEIT:", 15, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(`${client?.rg ?? "—"} / ${client?.cpf ?? "—"}`, 62, y);
+  y += 4.5;
+  doc.setFont("helvetica", "bold");
+  doc.text("ENDEREÇO / ADRES:", 15, y);
+  doc.setFont("helvetica", "normal");
+  const addr = doc.splitTextToSize(client?.endereco ?? "—", 128) as string[];
+  doc.text(addr, 62, y);
+  y += Math.max(4.5, addr.length * 4);
+  doc.setFont("helvetica", "bold");
+  doc.text("TELEFONE / TELEFOON:", 15, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(client?.whatsapp ?? "—", 62, y);
+  y += 4.5;
+  doc.setFont("helvetica", "bold");
+  doc.text("VEÍCULO / VOERTUIG:", 15, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(
+    `${vehicle?.modelo ?? "—"} · ${vehicle?.placa ?? "—"}${vehicle?.ano ? ` · ${vehicle.ano}` : ""}`,
+    62,
+    y,
+  );
+  y += 7;
 
-  y = section(doc, y, l.terms);
-  y = kv(doc, y, l.withdraw, rental.dataRetirada);
-  y = kv(doc, y, l.ret, rental.dataSaida);
-  y = kv(doc, y, l.price, fmtMoney(rental.valorAluguel, rental.moeda));
-  if (rental.seguroValor) y = kv(doc, y, l.insurance, fmtMoney(rental.seguroValor, rental.moeda));
-  if (rental.caucaoValor) y = kv(doc, y, l.deposit, fmtMoney(rental.caucaoValor, rental.moeda));
-  y = kv(doc, y, l.currency, rental.moeda);
-  y += 2;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("CLÁUSULA 1 – OBJETO / ARTIKEL 1 – ONDERWERP", 15, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  y = wrap(
+    doc,
+    "O presente contrato refere-se ao aluguel de veículos (carros e caminhões), podendo ser utilizados em áreas de garimpo sob responsabilidade do locatário. / Dit contract betreft de verhuur van voertuigen (auto's en vrachtwagens), die ook gebruikt mogen worden in goudmijngebieden onder verantwoordelijkheid van de huurder.",
+    y,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.text("CLÁUSULA 2 – USO / ARTIKEL 2 – GEBRUIK", 15, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  y = wrap(
+    doc,
+    "O locatário deve utilizar o veículo de forma responsável. / De huurder moet het voertuig op verantwoorde wijze gebruiken.",
+    y,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.text("CLÁUSULA 3 – PROIBIÇÃO DE FUMAR / ARTIKEL 3 – ROOKVERBOD", 15, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  y = wrap(doc, "É proibido fumar no veículo. / Roken in het voertuig is verboden.", y);
+  doc.setFont("helvetica", "bold");
+  doc.text("CLÁUSULA 4 – COMBUSTÍVEL / ARTIKEL 4 – BRANDSTOF", 15, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  y = wrap(
+    doc,
+    "O veículo será entregue com tanque cheio e deve ser devolvido com tanque cheio. / Het voertuig wordt geleverd met een volle tank en moet met een volle tank worden teruggebracht.",
+    y,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.text("CLÁUSULA 5 – LIMPEZA / ARTIKEL 5 – REINIGING", 15, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  y = wrap(
+    doc,
+    "Veículo sujo: taxa de SRD 1.000. Uso em garimpo: taxa de SRD 6.000. / Vuil voertuig: SRD 1.000. Gebruik in goudmijngebied: SRD 6.000.",
+    y,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.text("CLÁUSULA 6 – DANOS / ARTIKEL 6 – SCHADE", 15, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  y = wrap(
+    doc,
+    "O locatário paga todos os custos de danos ou acidentes. / De huurder betaalt alle kosten bij schade of ongeval.",
+    y,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.text("CLÁUSULA 7 – PRAZO / ARTIKEL 7 – PERIODE", 15, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  y = wrap(
+    doc,
+    `Início / Start: ${formatDate(rental.dataRetirada)}     Fim / Einde: ${
+      rental.prazoIndeterminado ? "indeterminado / onbepaald" : formatDate(rental.dataSaida)
+    }`,
+    y,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.text("CLÁUSULA 8 – VALOR / ARTIKEL 8 – PRIJS", 15, y);
+  y += 4;
+  doc.setFont("helvetica", "normal");
+  y = wrap(doc, `Valor / Prijs: ${fmtMoney(rental.valorAluguel, rental.moeda)}`, y);
+  y += 4;
 
-  y = section(doc, y, l.clauses);
-  doc.setFontSize(9);
-  const clauses = [l.c1, l.c2, l.c3, l.c4, l.c5];
-  for (const c of clauses) {
-    const lines = doc.splitTextToSize(c, 178);
-    doc.text(lines, 17, y);
-    y += lines.length * 4.5 + 1;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("ASSINATURAS / HANDTEKENINGEN", 15, y);
+  y += 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text("LOCADOR / VERHUURDER", 17, y);
+  doc.text("LOCATÁRIO / HUURDER", 115, y);
+  y += 4;
+  doc.setFontSize(7.5);
+  doc.text(COMPANY, 17, y);
+
+  if (rental.contratoAssinaturaUrl) {
+    try {
+      const img = await loadImage(rental.contratoAssinaturaUrl);
+      doc.addImage(img, "PNG", 115, y - 2, 70, 28);
+    } catch {
+      doc.line(115, y + 22, 190, y + 22);
+    }
+  } else {
+    doc.line(115, y + 22, 190, y + 22);
   }
-
-  y = Math.max(y + 6, 235);
-  y = section(doc, y, l.sign);
-  doc.setFontSize(9);
-  doc.text(l.date, 17, y);
-  y += 20;
-  doc.line(20, y, 90, y);
-  doc.line(115, y, 190, y);
-  doc.text(l.sigLocadora, 20, y + 5);
-  doc.text(l.sigLocatario, 115, y + 5);
+  y += 32;
+  doc.setFontSize(8);
+  doc.text(`DATA / DATUM: ${formatDate(rental.dataRetirada)}`, 17, y);
 
   doc.setFontSize(7);
   doc.setTextColor(120);
-  doc.text(`${l.ref}: ${rental.id}`, 15, 290);
-  doc.text(`${l.generated}: ${new Date().toLocaleString(lang === "pt" ? "pt-BR" : "nl-NL")}`, 195, 290, { align: "right" });
+  doc.text(`Ref.: ${rental.id}`, 15, 290);
+  doc.text(
+    `${lang === "pt" ? "Gerado em" : "Gegenereerd op"}: ${new Date().toLocaleString(
+      lang === "pt" ? "pt-BR" : "nl-NL",
+    )}`,
+    195,
+    290,
+    { align: "right" },
+  );
 
   doc.save(`contrato-${vehicle?.placa ?? rental.id}.pdf`);
 }
@@ -179,7 +258,7 @@ export function generateContractPDF(
 export function generatePendingDocPDF(label: string, ref: string, lang: Lang = "pt") {
   const l = L[lang];
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  header(doc, l.pendingTitle, l.company);
+  header(doc, l.pendingTitle, COMPANY);
   let y = 32;
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");

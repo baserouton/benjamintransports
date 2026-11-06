@@ -121,6 +121,8 @@ export async function findStore(): Promise<Store> {
       vistoriaDevolucao: row.vistoriaDevolucao ?? undefined,
       prazoIndeterminado: Boolean(row.prazoIndeterminado),
       renovacoes: row.renovacoes ?? undefined,
+      contratoAssinaturaUrl: row.contratoAssinaturaUrl ?? undefined,
+      contratoAssinadoEm: row.contratoAssinadoEm ? formatDateTime(row.contratoAssinadoEm) : undefined,
     })),
     transferServices: transferRows.map(({ createdAt: _c, ...row }) => ({
       ...row,
@@ -494,7 +496,13 @@ export async function insertRental(input: Omit<Rental, "id" | "status">) {
       ? applyUsdRates(input.seguroValor, input.moeda, rates)
       : null;
   await db.transaction(async (tx) => {
-    const { prazoIndeterminado, renovacoes, ...rentalFields } = input;
+    const {
+      prazoIndeterminado,
+      renovacoes,
+      contratoAssinaturaUrl: _assinatura,
+      contratoAssinadoEm: _assinadoEm,
+      ...rentalFields
+    } = input;
     await tx.insert(rentals).values({
       id,
       ...rentalFields,
@@ -655,6 +663,27 @@ export async function registerOilChange(input: OilChangeInput) {
   return id;
 }
 
+export async function signRentalContract(id: string, assinaturaUrl: string) {
+  if (!assinaturaUrl.trim()) throw new Error("Assinatura inválida");
+  const [rental] = await db
+    .select({ id: rentals.id, status: rentals.status })
+    .from(rentals)
+    .where(eq(rentals.id, id))
+    .limit(1);
+  if (!rental) throw new Error("Locação não encontrada");
+  if (rental.status !== "pendente") {
+    throw new Error("Só é possível assinar contrato de locação pendente");
+  }
+  await db
+    .update(rentals)
+    .set({
+      contratoAssinaturaUrl: assinaturaUrl.trim(),
+      contratoAssinadoEm: new Date(),
+    })
+    .where(eq(rentals.id, id));
+  return { id, contratoAssinaturaUrl: assinaturaUrl.trim() };
+}
+
 export async function deliverRental(id: string, inspection: InspectionOut) {
   if (inspection.km == null || Number.isNaN(inspection.km) || inspection.km < 0) {
     throw new Error("Informe a quilometragem da retirada");
@@ -670,12 +699,16 @@ export async function deliverRental(id: string, inspection: InspectionOut) {
       .select({
         veiculoId: rentals.veiculoId,
         status: rentals.status,
+        contratoAssinaturaUrl: rentals.contratoAssinaturaUrl,
       })
       .from(rentals)
       .where(eq(rentals.id, id))
       .limit(1);
     if (!rental) throw new Error("Locação não encontrada");
     if (rental.status !== "pendente") throw new Error("Locação já foi entregue ou devolvida");
+    if (!rental.contratoAssinaturaUrl?.trim()) {
+      throw new Error("O cliente precisa assinar o contrato antes da entrega");
+    }
 
     const [vehicle] = await tx
       .select({ kmAtual: vehicles.kmAtual })

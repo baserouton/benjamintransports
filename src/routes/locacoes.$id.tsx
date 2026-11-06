@@ -8,6 +8,7 @@ import {
   deliverRentalFn,
   renewRentalFn,
   returnRentalFn,
+  signRentalContractFn,
   uploadVehiclePhotosFn,
 } from "@/server/functions/store.functions";
 import {
@@ -40,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import { generateContractPDF } from "@/lib/pdf";
+import { SignaturePad } from "@/components/signature-pad";
 
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -97,6 +99,7 @@ function RentalDetail() {
   const [renewDate, setRenewDate] = useState("");
   const [renewValor, setRenewValor] = useState<number | "">("");
   const [renewing, setRenewing] = useState(false);
+  const [signing, setSigning] = useState(false);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -159,6 +162,10 @@ function RentalDetail() {
     }
     if (outCarPhotos.length === 0) {
       toast.error("Anexe ao menos uma foto do veículo na retirada.");
+      return;
+    }
+    if (!r.contratoAssinaturaUrl) {
+      toast.error(t("signatureRequired"));
       return;
     }
     setBusy(true);
@@ -252,6 +259,22 @@ function RentalDetail() {
     setRenewOpen(true);
   };
 
+  const saveSignature = async (dataUrl: string) => {
+    setSigning(true);
+    try {
+      const uploaded = await uploadVehiclePhotosFn({ data: { images: [dataUrl] } });
+      const assinaturaUrl = uploaded.urls[0];
+      if (!assinaturaUrl) throw new Error("Falha no upload da assinatura");
+      await signRentalContractFn({ data: { id: r.id, assinaturaUrl } });
+      notifyStoreChanged();
+      toast.success(t("contractSigned"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar a assinatura");
+    } finally {
+      setSigning(false);
+    }
+  };
+
   const saveRenewal = async () => {
     if (!renewIndefinite && !renewDate) {
       toast.error(lang === "pt" ? "Informe a nova data de devolução." : "Vul de nieuwe retourdatum in.");
@@ -291,8 +314,14 @@ function RentalDetail() {
     });
     nextSteps.push({
       icon: FileDown,
-      text: lang === "pt" ? "Gerar e assinar o contrato de locação" : "Genereer en onderteken het huurcontract",
-      tone: "muted",
+      text: r.contratoAssinaturaUrl
+        ? lang === "pt"
+          ? "Contrato assinado — pode entregar o veículo"
+          : "Contract getekend — voertuig mag worden afgeleverd"
+        : lang === "pt"
+          ? "Vire o iPad e peça ao cliente para assinar o contrato"
+          : "Draai de iPad om en laat de klant het contract tekenen",
+      tone: r.contratoAssinaturaUrl ? "muted" : "primary",
     });
   }
   if (r.status === "entregue") {
@@ -534,9 +563,14 @@ function RentalDetail() {
               size="sm"
               className="w-full justify-start"
               onClick={() => {
-                generateContractPDF(r, v, c, lang);
-                logAction("admin1", `Gerou contrato PDF ${r.id.slice(0, 6)}`);
-                toast.success("PDF");
+                void generateContractPDF(r, v, c, lang)
+                  .then(() => {
+                    logAction("admin1", `Gerou contrato PDF ${r.id.slice(0, 6)}`);
+                    toast.success("PDF");
+                  })
+                  .catch((error) => {
+                    toast.error(error instanceof Error ? error.message : "Não foi possível gerar o PDF");
+                  });
               }}
             >
               <FileDown className="h-4 w-4 mr-2" /> {t("contract")} (PDF)
@@ -568,6 +602,13 @@ function RentalDetail() {
               date={r.dataRetirada}
               detail={`${v?.modelo} · ${c?.nome}`}
             />
+            {r.contratoAssinaturaUrl && (
+              <TimelineItem
+                icon={FileDown}
+                title={t("contractSigned")}
+                date={r.contratoAssinadoEm ?? r.dataRetirada}
+              />
+            )}
             {r.vistoriaRetirada && (
               <TimelineItem
                 icon={ShieldCheck}
@@ -607,11 +648,24 @@ function RentalDetail() {
             )}
           </ol>
 
-          {(r.vistoriaRetirada?.kmFotoUrl ||
+          {(r.contratoAssinaturaUrl ||
+            r.vistoriaRetirada?.kmFotoUrl ||
             (r.vistoriaRetirada?.fotos?.length ?? 0) > 0 ||
             r.vistoriaDevolucao?.kmFotoUrl ||
             (r.vistoriaDevolucao?.fotos?.length ?? 0) > 0) && (
             <div className="mt-6 space-y-5">
+              {r.contratoAssinaturaUrl && r.status !== "pendente" && (
+                <div>
+                  <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2">
+                    {t("contractSigned")}
+                  </div>
+                  <img
+                    src={r.contratoAssinaturaUrl}
+                    alt=""
+                    className="w-full max-w-md max-h-36 object-contain rounded-md border border-border bg-white"
+                  />
+                </div>
+              )}
               {r.vistoriaRetirada && (
                 <InspectionPhotoGallery
                   title={t("inspectionOut")}
@@ -786,8 +840,52 @@ function RentalDetail() {
               photos={outCarPhotos}
               onChange={setOutCarPhotos}
             />
-            <div className="flex justify-end">
-              <Button onClick={markDelivered} disabled={busy}>
+            <div className="rounded-md border border-border p-4 space-y-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  {t("contract")}
+                </div>
+                <p className="text-sm mt-1">
+                  {lang === "pt"
+                    ? "Benjamin Transport N.V. · vire o iPad para o cliente assinar"
+                    : "Benjamin Transport N.V. · draai de iPad naar de klant"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {c?.nome ?? "—"} · {v?.modelo ?? "—"} {v?.placa ?? ""} · {fmtMoney(r.valorAluguel, r.moeda)}
+                </p>
+              </div>
+              {r.contratoAssinaturaUrl ? (
+                <div className="space-y-2">
+                  <img
+                    src={r.contratoAssinaturaUrl}
+                    alt=""
+                    className="w-full max-h-40 object-contain rounded-md border border-border bg-white"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t("contractSigned")}
+                    {r.contratoAssinadoEm ? ` · ${r.contratoAssinadoEm}` : ""}
+                  </p>
+                </div>
+              ) : (
+                <SignaturePad
+                  hint={t("signHere")}
+                  clearLabel={t("clearSignature")}
+                  confirmLabel={t("confirmSignature")}
+                  confirming={signing}
+                  onEmpty={() =>
+                    toast.error(
+                      lang === "pt" ? "Peça ao cliente para assinar na caixa." : "Laat de klant in het vak tekenen.",
+                    )
+                  }
+                  onConfirm={(dataUrl) => void saveSignature(dataUrl)}
+                />
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              {!r.contratoAssinaturaUrl && (
+                <p className="text-xs text-muted-foreground">{t("signatureRequired")}</p>
+              )}
+              <Button onClick={markDelivered} disabled={busy || !r.contratoAssinaturaUrl}>
                 {busy
                   ? lang === "pt"
                     ? "Salvando..."

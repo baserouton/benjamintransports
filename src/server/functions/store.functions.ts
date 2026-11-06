@@ -312,6 +312,18 @@ export const registerOilChangeFn = createServerFn({ method: "POST" })
     return registerOilChangeHandler(data);
   });
 
+export const signRentalContractFn = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      id: z.string().min(1).max(36),
+      assinaturaUrl: z.string().min(1).max(500),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { signRentalContractHandler } = await import("./store.handlers.server");
+    return signRentalContractHandler(data);
+  });
+
 export const deliverRentalFn = createServerFn({ method: "POST" })
   .validator(
     z.object({

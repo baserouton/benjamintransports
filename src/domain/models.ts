@@ -289,6 +289,8 @@ export interface Rental {
   vistoriaDevolucao?: InspectionIn;
   prazoIndeterminado?: boolean;
   renovacoes?: RentalRenewal[];
+  contratoAssinaturaUrl?: string;
+  contratoAssinadoEm?: string;
 }
 
 export interface Maintenance {

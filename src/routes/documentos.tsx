@@ -51,17 +51,27 @@ function Docs() {
                   <div className="font-medium">{v?.modelo} · {v?.placa}</div>
                   <div className="text-xs text-muted-foreground">{c?.nome} · {r.dataRetirada} → {r.dataSaida}</div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    generateContractPDF(r, v, c, lang);
-                    logAction("admin1", `Gerou contrato PDF ${r.id.slice(0, 6)}`);
-                    toast.success("PDF gerado");
-                  }}
-                >
-                  <FileDown className="h-4 w-4 mr-1" /> PDF
-                </Button>
+                <div className="flex items-center gap-2">
+                  {r.contratoAssinaturaUrl && (
+                    <Badge variant="secondary">{t("contractSigned")}</Badge>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void generateContractPDF(r, v, c, lang)
+                        .then(() => {
+                          logAction("admin1", `Gerou contrato PDF ${r.id.slice(0, 6)}`);
+                          toast.success("PDF gerado");
+                        })
+                        .catch((error) => {
+                          toast.error(error instanceof Error ? error.message : "Não foi possível gerar o PDF");
+                        });
+                    }}
+                  >
+                    <FileDown className="h-4 w-4 mr-1" /> PDF
+                  </Button>
+                </div>
               </div>
             );
           })}

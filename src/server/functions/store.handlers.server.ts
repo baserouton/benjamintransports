@@ -18,6 +18,7 @@ import {
 } from "@/server/auth/auth.server";
 import {
   deliverRental,
+  signRentalContract,
   deleteFinanceEntry,
   findStore,
   insertActivityLog,
@@ -278,6 +279,18 @@ export async function registerOilChangeHandler(data: {
     detalhes: { id, veiculoId: data.veiculoId, kmTroca: data.kmTroca },
   });
   return { id };
+}
+
+export async function signRentalContractHandler(data: { id: string; assinaturaUrl: string }) {
+  const session = await requireSession();
+  const result = await signRentalContract(data.id, data.assinaturaUrl);
+  await insertActivityLog({
+    usuario: session.login,
+    acao: `Registrou assinatura do contrato ${data.id.slice(0, 6)}`,
+    categoria: "locacao",
+    detalhes: { id: data.id },
+  });
+  return result;
 }
 
 export async function deliverRentalHandler(data: {
