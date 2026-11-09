@@ -21,6 +21,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { CurrentUserProvider } from "@/lib/current-user-provider";
 import { useCurrentUser, useLogger } from "@/lib/current-user";
 import { LoginGate } from "@/components/login-gate";
+import { BrandLogo } from "@/components/brand-logo";
 
 function NotFoundComponent() {
   return (
@@ -87,14 +88,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Locadora Admin — Painel de Aluguel de Carros" },
+      { title: "Benjamin Transports — Painel" },
       {
         name: "description",
         content:
           "Painel administrativo interno para gestão de veículos, clientes, locações, manutenção e financeiro.",
       },
-      { name: "author", content: "Locadora Admin" },
-      { property: "og:title", content: "Locadora Admin — Painel de Aluguel de Carros" },
+      { name: "author", content: "Benjamin Transports" },
+      { property: "og:title", content: "Benjamin Transports — Painel" },
       {
         property: "og:description",
         content: "Gestão completa de frota, clientes e locações.",
@@ -143,11 +144,9 @@ function TopBar() {
   };
   return (
     <header className="h-14 border-b border-border bg-background/80 backdrop-blur flex items-center justify-between px-3 sticky top-0 z-30">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3 min-w-0">
         <SidebarTrigger />
-        <span className="text-sm text-muted-foreground hidden sm:inline">
-          Painel administrativo
-        </span>
+        <BrandLogo className="h-6 w-[118px] sm:h-7 sm:w-[138px]" />
       </div>
       <div className="flex items-center gap-2">
         {user && (
@@ -277,9 +276,9 @@ function RootComponent() {
                   </main>
                 </div>
               </div>
-              <Toaster position="top-right" />
             </SidebarProvider>
           </LoginGate>
+          <Toaster position="top-right" />
         </CurrentUserProvider>
       </I18nProvider>
     </QueryClientProvider>

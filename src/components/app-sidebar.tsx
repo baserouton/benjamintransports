@@ -32,6 +32,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useI18n } from "@/lib/i18n";
 import { canViewFinance } from "@/lib/data-store";
 import { useCurrentUser } from "@/lib/current-user";
+import { BrandLogo, BrandMark } from "@/components/brand-logo";
 
 export function AppSidebar() {
   const { t } = useI18n();
@@ -64,13 +65,11 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-bold">
-            L
-          </div>
-          <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="text-sm font-semibold">{t("app")}</span>
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+        <div className="flex items-center gap-2 px-2 py-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <BrandMark className="hidden group-data-[collapsible=icon]:flex" />
+          <div className="flex min-w-0 flex-col gap-1 group-data-[collapsible=icon]:hidden">
+            <BrandLogo className="h-8 w-[158px]" />
+            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
               Suriname
             </span>
           </div>
@@ -171,7 +170,7 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <div className="px-2 py-1 text-[10px] text-muted-foreground group-data-[collapsible=icon]:hidden">
-          v1.0 · Painel interno
+          {t("loginInternal")}
         </div>
       </SidebarFooter>
     </Sidebar>
