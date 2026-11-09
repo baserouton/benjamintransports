@@ -65,7 +65,6 @@ export function LoginGate({ children }: { children: ReactNode }) {
           <h1 className="text-3xl sm:text-4xl font-light tracking-tight leading-tight">
             {t("loginBrandLine")}
           </h1>
-          <p className="mt-4 text-sm text-white/55">{t("loginBrandPlace")}</p>
         </div>
         <p className="relative mt-10 hidden text-xs text-white/35 lg:block">
           Benjamin Transport N.V. · KKF 87747
