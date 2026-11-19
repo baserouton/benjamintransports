@@ -3,7 +3,14 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
-import { useStore, notifyStoreChanged, fmtMoney, logAction } from "@/lib/data-store";
+import {
+  useStore,
+  notifyStoreChanged,
+  fmtMoney,
+  logAction,
+  COUPON_KIND_LABELS,
+  type Coupon,
+} from "@/lib/data-store";
 import {
   deliverRentalFn,
   renewRentalFn,
@@ -29,6 +36,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   FileDown,
+  Receipt,
   Car,
   User,
   Calendar,
@@ -40,7 +48,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { generateContractPDF } from "@/lib/pdf";
+import { generateContractPDF, generateCouponPDF } from "@/lib/pdf";
 import { SignaturePad } from "@/components/signature-pad";
 
 function fileToDataUrl(file: File) {
@@ -121,6 +129,17 @@ function RentalDetail() {
 
   const v = s.vehicles.find((x) => x.id === r.veiculoId);
   const c = s.clients.find((x) => x.id === r.clienteId);
+  const rentalCoupons = s.coupons.filter((coupon) => coupon.rentalId === r.id);
+
+  const downloadCoupon = (coupon: Coupon, notify = true) => {
+    try {
+      generateCouponPDF(coupon, lang);
+      logAction("admin1", `Gerou cupom PDF ${coupon.codigo}`);
+      if (notify) toast.success(`${t("couponIssued")} ${coupon.codigo}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível gerar o cupom");
+    }
+  };
 
   const saida = new Date(r.dataSaida);
   const retirada = new Date(r.dataRetirada);
@@ -176,7 +195,7 @@ function RentalDetail() {
       const kmFotoUrl = uploaded.urls[0];
       const fotos = uploaded.urls.slice(1);
       if (!kmFotoUrl || fotos.length === 0) throw new Error("Falha no upload das fotos da retirada");
-      await deliverRentalFn({
+      const delivered = await deliverRentalFn({
         data: {
           id: r.id,
           inspection: {
@@ -191,7 +210,10 @@ function RentalDetail() {
         },
       });
       notifyStoreChanged();
-      toast.success(t("delivered"));
+      toast.success(
+        delivered.coupon ? `${t("delivered")} · ${delivered.coupon.codigo}` : t("delivered"),
+      );
+      if (delivered.coupon) downloadCoupon(delivered.coupon, false);
       URL.revokeObjectURL(outPhoto.preview);
       outCarPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
       setOutPhoto(null);
@@ -224,7 +246,7 @@ function RentalDetail() {
       const kmFotoUrl = uploaded.urls[0];
       const fotos = uploaded.urls.slice(1);
       if (!kmFotoUrl || fotos.length === 0) throw new Error("Falha no upload das fotos da devolução");
-      await returnRentalFn({
+      const returned = await returnRentalFn({
         data: {
           id: r.id,
           inspection: {
@@ -240,7 +262,10 @@ function RentalDetail() {
         },
       });
       notifyStoreChanged();
-      toast.success(t("returned"));
+      toast.success(
+        returned.coupon ? `${t("returned")} · ${returned.coupon.codigo}` : t("returned"),
+      );
+      if (returned.coupon) downloadCoupon(returned.coupon, false);
       URL.revokeObjectURL(inPhoto.preview);
       inCarPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
       setInPhoto(null);
@@ -282,7 +307,7 @@ function RentalDetail() {
     }
     setRenewing(true);
     try {
-      await renewRentalFn({
+      const renewed = await renewRentalFn({
         data: {
           id: r.id,
           prazoIndeterminado: renewIndefinite,
@@ -291,7 +316,14 @@ function RentalDetail() {
         },
       });
       notifyStoreChanged();
-      toast.success(lang === "pt" ? "Aluguel renovado." : "Huur verlengd.");
+      toast.success(
+        renewed.coupon
+          ? `${lang === "pt" ? "Aluguel renovado" : "Huur verlengd"} · ${renewed.coupon.codigo}`
+          : lang === "pt"
+            ? "Aluguel renovado."
+            : "Huur verlengd.",
+      );
+      if (renewed.coupon) downloadCoupon(renewed.coupon, false);
       setRenewOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível renovar");
@@ -575,6 +607,17 @@ function RentalDetail() {
             >
               <FileDown className="h-4 w-4 mr-2" /> {t("contract")} (PDF)
             </Button>
+            {rentalCoupons.map((coupon) => (
+              <Button
+                key={coupon.id}
+                variant="outline"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => downloadCoupon(coupon)}
+              >
+                <Receipt className="h-4 w-4 mr-2" /> {coupon.codigo}
+              </Button>
+            ))}
             <Button variant="outline" size="sm" className="w-full justify-start" asChild>
               <Link to="/veiculos/$id" params={{ id: r.veiculoId }}>
                 <Car className="h-4 w-4 mr-2" /> {lang === "pt" ? "Ver veículo" : "Voertuig"}
@@ -625,6 +668,15 @@ function RentalDetail() {
             {r.status !== "pendente" && (
               <TimelineItem icon={CheckCircle2} title={t("delivered")} date={r.dataRetirada} tone="primary" />
             )}
+            {rentalCoupons.map((coupon) => (
+              <TimelineItem
+                key={coupon.id}
+                icon={Receipt}
+                title={`${t("couponIssued")} ${coupon.codigo}`}
+                date={coupon.createdAt}
+                detail={`${COUPON_KIND_LABELS[coupon.tipo][lang]} · ${fmtMoney(coupon.total, coupon.moeda)}`}
+              />
+            ))}
             {clientLogs.map((l) => (
               <TimelineItem key={l.id} icon={Clock} title={l.acao} date={l.quando} muted />
             ))}

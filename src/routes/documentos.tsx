@@ -5,9 +5,9 @@ import { useI18n } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, AlertCircle, FileDown } from "lucide-react";
-import { useStore, logAction } from "@/lib/data-store";
-import { generateContractPDF } from "@/lib/pdf";
+import { FileText, AlertCircle, FileDown, Receipt } from "lucide-react";
+import { useStore, logAction, COUPON_KIND_LABELS, fmtMoney } from "@/lib/data-store";
+import { generateContractPDF, generateCouponPDF } from "@/lib/pdf";
 
 export const Route = createFileRoute("/documentos")({
   head: () => ({
@@ -72,6 +72,50 @@ function Docs() {
                     <FileDown className="h-4 w-4 mr-1" /> PDF
                   </Button>
                 </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Receipt className="h-4 w-4" /> {t("coupons")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {s.coupons.length === 0 && (
+            <p className="text-sm text-muted-foreground">{t("noRecords")}</p>
+          )}
+          {s.coupons.map((coupon) => {
+            const plate = coupon.payload.veiculo?.placa ?? "—";
+            const who = coupon.payload.cliente?.nome ?? coupon.payload.translato?.destino ?? "—";
+            return (
+              <div key={coupon.id} className="flex items-center justify-between rounded-md border border-border p-3">
+                <div className="text-sm">
+                  <div className="font-medium">
+                    {coupon.codigo} · {COUPON_KIND_LABELS[coupon.tipo][lang]}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {who} · {plate} · {fmtMoney(coupon.total, coupon.moeda)}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    try {
+                      generateCouponPDF(coupon, lang);
+                      logAction("admin1", `Gerou cupom PDF ${coupon.codigo}`);
+                      toast.success(`${t("couponIssued")} ${coupon.codigo}`);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível gerar o PDF");
+                    }
+                  }}
+                >
+                  <FileDown className="h-4 w-4 mr-1" /> PDF
+                </Button>
               </div>
             );
           })}

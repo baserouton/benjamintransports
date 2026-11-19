@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Pencil, Plane, Plus, Search, Trash2 } from "lucide-react";
+import { FileDown, Pencil, Plane, Plus, Search, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { useI18n } from "@/lib/i18n";
 import { useCurrentUser } from "@/lib/current-user";
@@ -21,6 +21,7 @@ import {
   deleteTransferServiceFn,
   updateTransferServiceFn,
 } from "@/server/functions/store.functions";
+import { generateCouponPDF } from "@/lib/pdf";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -186,8 +187,13 @@ function TranslatoPage() {
         await updateTransferServiceFn({ data: { id: editingId, ...data } });
         toast.success("Serviço avulso atualizado.");
       } else {
-        await createTransferServiceFn({ data });
-        toast.success("Serviço avulso registrado e lançado no financeiro.");
+        const created = await createTransferServiceFn({ data });
+        toast.success(
+          created.coupon
+            ? `Serviço avulso registrado · cupom ${created.coupon.codigo}`
+            : "Serviço avulso registrado e lançado no financeiro.",
+        );
+        if (created.coupon) generateCouponPDF(created.coupon, lang);
       }
       notifyStoreChanged();
       setOpen(false);
@@ -448,6 +454,9 @@ function TranslatoPage() {
                 <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">
                   {t("price")}
                 </TableHead>
+                <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">
+                  {t("coupon")}
+                </TableHead>
                 {canManage && (
                   <TableHead className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">
                     {t("edit")}
@@ -458,7 +467,7 @@ function TranslatoPage() {
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={canManage ? 6 : 5} className="text-center text-muted-foreground py-10">
+                  <TableCell colSpan={canManage ? 7 : 6} className="text-center text-muted-foreground py-10">
                     {t("noRecords")}
                   </TableCell>
                 </TableRow>
@@ -488,6 +497,27 @@ function TranslatoPage() {
                     </TableCell>
                     <TableCell className="text-right text-xs font-bold tabular-nums">
                       + {fmtMoney(row.valor, row.moeda)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {(() => {
+                        const coupon = s.coupons.find((c) => c.transferServiceId === row.id);
+                        if (!coupon) return <span className="text-xs text-muted-foreground">—</span>;
+                        return (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => {
+                              generateCouponPDF(coupon, lang);
+                              toast.success(`${t("couponIssued")} ${coupon.codigo}`);
+                            }}
+                          >
+                            <FileDown className="h-3.5 w-3.5 mr-1" />
+                            {coupon.codigo}
+                          </Button>
+                        );
+                      })()}
                     </TableCell>
                     {canManage && (
                       <TableCell className="text-right">

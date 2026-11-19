@@ -8,6 +8,9 @@ export type {
   ActivityLog,
   Category,
   Client,
+  Coupon,
+  CouponKind,
+  CouponPayload,
   Currency,
   FinanceCategory,
   FinanceEntry,
@@ -30,6 +33,8 @@ export type {
   VehiclePayback,
 } from "@/domain/models";
 export {
+  COUPON_KIND_LABELS,
+  COUPON_KINDS,
   DEFAULT_OIL_CHANGE_INTERVAL_KM,
   FINANCE_CATEGORIES,
   FINANCE_CATEGORY_LABELS,

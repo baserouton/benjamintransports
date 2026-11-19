@@ -298,13 +298,14 @@ export async function deliverRentalHandler(data: {
   inspection: InspectionOut;
 }) {
   const session = await requireSession();
-  await deliverRental(data.id, data.inspection);
+  const result = await deliverRental(data.id, data.inspection, session.login);
   await insertActivityLog({
     usuario: session.login,
-    acao: `Marcou locação ${data.id.slice(0, 6)} como entregue (km ${data.inspection.km})`,
+    acao: `Marcou locação ${data.id.slice(0, 6)} como entregue (km ${data.inspection.km}) · cupom ${result.coupon.codigo}`,
     categoria: "locacao",
+    detalhes: { id: data.id, couponId: result.coupon.id, codigo: result.coupon.codigo },
   });
-  return { ok: true };
+  return { ok: true, coupon: result.coupon };
 }
 
 export async function renewRentalHandler(data: {
@@ -317,15 +318,19 @@ export async function renewRentalHandler(data: {
   const result = await renewRental({ ...data, usuario: session.login });
   await insertActivityLog({
     usuario: session.login,
-    acao: data.prazoIndeterminado
-      ? `Renovou locação ${data.id.slice(0, 6)} com prazo indeterminado`
-      : `Renovou locação ${data.id.slice(0, 6)} até ${data.dataSaida}`,
+    acao: result.coupon
+      ? `Renovou locação ${data.id.slice(0, 6)} · cupom ${result.coupon.codigo}`
+      : data.prazoIndeterminado
+        ? `Renovou locação ${data.id.slice(0, 6)} com prazo indeterminado`
+        : `Renovou locação ${data.id.slice(0, 6)} até ${data.dataSaida}`,
     categoria: "locacao",
     detalhes: {
       id: data.id,
       prazoIndeterminado: data.prazoIndeterminado,
       dataSaida: data.dataSaida ?? null,
       valor: data.valor ?? null,
+      couponId: result.coupon?.id ?? null,
+      codigo: result.coupon?.codigo ?? null,
     },
   });
   return result;
@@ -333,25 +338,37 @@ export async function renewRentalHandler(data: {
 
 export async function returnRentalHandler(data: { id: string; inspection: InspectionIn }) {
   const session = await requireSession();
-  await returnRental(data.id, data.inspection);
+  const result = await returnRental(data.id, data.inspection, session.login);
   await insertActivityLog({
     usuario: session.login,
-    acao: `Fechou locação ${data.id.slice(0, 6)}`,
+    acao: result.coupon
+      ? `Fechou locação ${data.id.slice(0, 6)} · cupom ${result.coupon.codigo}`
+      : `Fechou locação ${data.id.slice(0, 6)}`,
     categoria: "locacao",
+    detalhes: result.coupon
+      ? { id: data.id, couponId: result.coupon.id, codigo: result.coupon.codigo }
+      : { id: data.id },
   });
-  return { ok: true };
+  return { ok: true, coupon: result.coupon };
 }
 
 export async function createTransferServiceHandler(data: Omit<TransferService, "id">) {
   const session = await requireSession();
-  const id = await insertTransferService(data);
+  const result = await insertTransferService(data, session.login);
   await insertActivityLog({
     usuario: session.login,
-    acao: `Registrou Translato (${data.tipoServico}) para ${data.destino}`,
+    acao: `Registrou Translato (${data.tipoServico}) para ${data.destino} · cupom ${result.coupon.codigo}`,
     categoria: "translato",
-    detalhes: { id, veiculoId: data.veiculoId, valor: data.valor, moeda: data.moeda },
+    detalhes: {
+      id: result.id,
+      veiculoId: data.veiculoId,
+      valor: data.valor,
+      moeda: data.moeda,
+      couponId: result.coupon.id,
+      codigo: result.coupon.codigo,
+    },
   });
-  return { id };
+  return result;
 }
 
 export async function updateTransferServiceHandler(

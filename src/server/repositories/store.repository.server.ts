@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
+  buildDeliveryCouponDraft,
+  buildRenewalCouponDraft,
+  buildReturnFeeCouponDraft,
+  buildTranslatoCouponDraft,
+} from "@/domain/coupon";
+import {
   TRANSFER_SERVICE_TYPE_LABELS,
   type ActivityLog,
   type Client,
+  type Coupon,
   type FinanceCategory,
   type FinanceEntry,
   type InspectionIn,
@@ -27,6 +34,7 @@ import { db } from "@/server/db/client.server";
 import {
   activityLogs,
   clients,
+  coupons,
   financeEntries,
   maintenance,
   rentals,
@@ -35,6 +43,8 @@ import {
   vehicleCategories,
   vehicles,
 } from "@/server/db/schema";
+
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function usdColumns(snap: UsdSnapshot) {
   return {
@@ -50,6 +60,135 @@ const formatDateTime = (value: Date | string) =>
     ? value.replace("T", " ").slice(0, 19)
     : value.toISOString().replace("T", " ").slice(0, 19);
 
+function mapCouponRow(row: typeof coupons.$inferSelect): Coupon {
+  return {
+    id: row.id,
+    numero: row.numero,
+    codigo: row.codigo,
+    tipo: row.tipo,
+    rentalId: row.rentalId ?? undefined,
+    transferServiceId: row.transferServiceId ?? undefined,
+    moeda: row.moeda,
+    total: row.total,
+    payload: row.payload,
+    emitidoPor: row.emitidoPor,
+    createdAt: formatDateTime(row.createdAt),
+  };
+}
+
+function couponVehicle(row: {
+  modelo: string;
+  placa: string;
+  ano: number | null;
+  categoria: string;
+}): Vehicle {
+  return {
+    id: "",
+    modelo: row.modelo,
+    placa: row.placa,
+    categoria: row.categoria,
+    fotos: [],
+    disponivel: true,
+    oculto: false,
+    seguroFeito: false,
+    vistoriaFeita: false,
+    ano: row.ano ?? undefined,
+  };
+}
+
+function couponClient(row: typeof clients.$inferSelect | undefined): Client | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    nome: row.nome,
+    rg: row.rg,
+    cpf: row.cpf,
+    endereco: row.endereco,
+    whatsapp: row.whatsapp,
+    email: row.email ?? undefined,
+    suriname: Boolean(row.suriname),
+  };
+}
+
+function couponRental(row: typeof rentals.$inferSelect): Rental {
+  return {
+    id: row.id,
+    veiculoId: row.veiculoId,
+    clienteId: row.clienteId,
+    dataRetirada: row.dataRetirada,
+    dataSaida: row.dataSaida,
+    status: row.status,
+    valorAluguel: row.valorAluguel,
+    moeda: row.moeda,
+    seguroValor: row.seguroValor ?? undefined,
+    seguroObs: row.seguroObs ?? undefined,
+    caucaoValor: row.caucaoValor ?? undefined,
+    caucaoStatus: row.caucaoStatus ?? undefined,
+    vistoriaRetirada: row.vistoriaRetirada ?? undefined,
+    vistoriaDevolucao: row.vistoriaDevolucao ?? undefined,
+    prazoIndeterminado: Boolean(row.prazoIndeterminado),
+    renovacoes: row.renovacoes ?? undefined,
+    contratoAssinaturaUrl: row.contratoAssinaturaUrl ?? undefined,
+    contratoAssinadoEm: row.contratoAssinadoEm
+      ? formatDateTime(row.contratoAssinadoEm)
+      : undefined,
+  };
+}
+
+async function loadCouponParties(
+  tx: DbTx,
+  rental: Pick<typeof rentals.$inferSelect, "veiculoId" | "clienteId">,
+) {
+  const [[vehicle], [client]] = await Promise.all([
+    tx
+      .select({
+        modelo: vehicles.modelo,
+        placa: vehicles.placa,
+        ano: vehicles.ano,
+        categoria: vehicles.categoria,
+      })
+      .from(vehicles)
+      .where(eq(vehicles.id, rental.veiculoId))
+      .limit(1),
+    tx.select().from(clients).where(eq(clients.id, rental.clienteId)).limit(1),
+  ]);
+  return {
+    vehicle: vehicle ? couponVehicle(vehicle) : null,
+    client: couponClient(client),
+  };
+}
+
+async function insertCoupon(
+  tx: DbTx,
+  input: {
+    tipo: Coupon["tipo"];
+    rentalId?: string;
+    transferServiceId?: string;
+    moeda: Coupon["moeda"];
+    total: number;
+    payload: Coupon["payload"];
+    emitidoPor: string;
+  },
+): Promise<Coupon> {
+  const id = randomUUID();
+  await tx.insert(coupons).values({
+    id,
+    codigo: `TMP-${id.slice(0, 8)}`,
+    tipo: input.tipo,
+    rentalId: input.rentalId ?? null,
+    transferServiceId: input.transferServiceId ?? null,
+    moeda: input.moeda,
+    total: input.total,
+    payload: input.payload,
+    emitidoPor: input.emitidoPor,
+  });
+  const [row] = await tx.select().from(coupons).where(eq(coupons.id, id)).limit(1);
+  if (!row) throw new Error("Falha ao emitir cupom");
+  const codigo = `BT-${new Date().getFullYear()}-${String(row.numero).padStart(5, "0")}`;
+  await tx.update(coupons).set({ codigo }).where(eq(coupons.id, id));
+  return mapCouponRow({ ...row, codigo });
+}
+
 export async function findStore(): Promise<Store> {
   try {
     await backfillMissingFinanceUsd();
@@ -63,18 +202,20 @@ export async function findStore(): Promise<Store> {
     clientRows,
     rentalRows,
     transferRows,
+    couponRows,
     maintenanceRows,
     financeRows,
     userRows,
     logRows,
   ] = await Promise.all([
-      db.select().from(vehicles).orderBy(vehicles.modelo),
-      db.select().from(vehicleCategories).orderBy(vehicleCategories.nome),
-      db.select().from(clients).orderBy(clients.nome),
-      db.select().from(rentals).orderBy(desc(rentals.dataRetirada)),
-      db.select().from(transferServices).orderBy(desc(transferServices.data)),
-      db.select().from(maintenance).orderBy(desc(maintenance.data)),
-      db.select().from(financeEntries).orderBy(desc(financeEntries.data)),
+    db.select().from(vehicles).orderBy(vehicles.modelo),
+    db.select().from(vehicleCategories).orderBy(vehicleCategories.nome),
+    db.select().from(clients).orderBy(clients.nome),
+    db.select().from(rentals).orderBy(desc(rentals.dataRetirada)),
+    db.select().from(transferServices).orderBy(desc(transferServices.data)),
+    db.select().from(coupons).orderBy(desc(coupons.createdAt)),
+    db.select().from(maintenance).orderBy(desc(maintenance.data)),
+    db.select().from(financeEntries).orderBy(desc(financeEntries.data)),
       db
         .select({
           id: users.id,
@@ -129,6 +270,7 @@ export async function findStore(): Promise<Store> {
       clienteNome: row.clienteNome ?? undefined,
       obs: row.obs ?? undefined,
     })),
+    coupons: couponRows.map(mapCouponRow),
     maintenance: maintenanceRows.map(
       ({ createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({
         ...row,
@@ -684,7 +826,11 @@ export async function signRentalContract(id: string, assinaturaUrl: string) {
   return { id, contratoAssinaturaUrl: assinaturaUrl.trim() };
 }
 
-export async function deliverRental(id: string, inspection: InspectionOut) {
+export async function deliverRental(
+  id: string,
+  inspection: InspectionOut,
+  usuario: string,
+) {
   if (inspection.km == null || Number.isNaN(inspection.km) || inspection.km < 0) {
     throw new Error("Informe a quilometragem da retirada");
   }
@@ -694,30 +840,23 @@ export async function deliverRental(id: string, inspection: InspectionOut) {
   if (!inspection.fotos?.length) {
     throw new Error("Anexe ao menos uma foto do veículo na retirada");
   }
+  let coupon: Coupon | undefined;
   await db.transaction(async (tx) => {
-    const [rental] = await tx
-      .select({
-        veiculoId: rentals.veiculoId,
-        status: rentals.status,
-        contratoAssinaturaUrl: rentals.contratoAssinaturaUrl,
-      })
-      .from(rentals)
-      .where(eq(rentals.id, id))
-      .limit(1);
+    const [rental] = await tx.select().from(rentals).where(eq(rentals.id, id)).limit(1);
     if (!rental) throw new Error("Locação não encontrada");
     if (rental.status !== "pendente") throw new Error("Locação já foi entregue ou devolvida");
     if (!rental.contratoAssinaturaUrl?.trim()) {
       throw new Error("O cliente precisa assinar o contrato antes da entrega");
     }
 
-    const [vehicle] = await tx
+    const [vehicleKm] = await tx
       .select({ kmAtual: vehicles.kmAtual })
       .from(vehicles)
       .where(eq(vehicles.id, rental.veiculoId))
       .limit(1);
-    if (vehicle?.kmAtual != null && inspection.km < vehicle.kmAtual) {
+    if (vehicleKm?.kmAtual != null && inspection.km < vehicleKm.kmAtual) {
       throw new Error(
-        `Km da retirada (${inspection.km}) não pode ser menor que o km atual do veículo (${vehicle.kmAtual})`,
+        `Km da retirada (${inspection.km}) não pode ser menor que o km atual do veículo (${vehicleKm.kmAtual})`,
       );
     }
 
@@ -729,10 +868,29 @@ export async function deliverRental(id: string, inspection: InspectionOut) {
       .update(vehicles)
       .set({ disponivel: false, kmAtual: inspection.km })
       .where(eq(vehicles.id, rental.veiculoId));
+
+    const { vehicle, client } = await loadCouponParties(tx, rental);
+    const draft = buildDeliveryCouponDraft(
+      { ...couponRental(rental), vistoriaRetirada: inspection, status: "entregue" },
+      client,
+      vehicle,
+      inspection,
+    );
+    coupon = await insertCoupon(tx, {
+      ...draft,
+      rentalId: rental.id,
+      emitidoPor: usuario,
+    });
   });
+  if (!coupon) throw new Error("Falha ao emitir cupom");
+  return { coupon };
 }
 
-export async function returnRental(id: string, inspection: InspectionIn) {
+export async function returnRental(
+  id: string,
+  inspection: InspectionIn,
+  usuario: string,
+) {
   if (inspection.km == null || Number.isNaN(inspection.km) || inspection.km < 0) {
     throw new Error("Informe a quilometragem da devolução");
   }
@@ -743,6 +901,7 @@ export async function returnRental(id: string, inspection: InspectionIn) {
     throw new Error("Anexe ao menos uma foto do veículo na devolução");
   }
   const rates = inspection.taxa > 0 ? await getUsdRates() : null;
+  let coupon: Coupon | null = null;
   await db.transaction(async (tx) => {
     const [rental] = await tx.select().from(rentals).where(eq(rentals.id, id)).limit(1);
     if (!rental) throw new Error("Locação não encontrada");
@@ -755,13 +914,14 @@ export async function returnRental(id: string, inspection: InspectionIn) {
       );
     }
 
+    const caucaoStatus =
+      inspection.semAvarias && rental.caucaoValor ? "devolvido" : rental.caucaoStatus;
     await tx
       .update(rentals)
       .set({
         status: "devolvido",
         vistoriaDevolucao: inspection,
-        caucaoStatus:
-          inspection.semAvarias && rental.caucaoValor ? "devolvido" : rental.caucaoStatus,
+        caucaoStatus,
       })
       .where(eq(rentals.id, id));
     await tx
@@ -786,17 +946,37 @@ export async function returnRental(id: string, inspection: InspectionIn) {
         veiculoId: rental.veiculoId,
         ...usdColumns(applyUsdRates(inspection.taxa, rental.moeda, rates!)),
       });
+      const { vehicle: couponVeh, client } = await loadCouponParties(tx, rental);
+      const draft = buildReturnFeeCouponDraft(
+        { ...couponRental(rental), vistoriaDevolucao: inspection, caucaoStatus: caucaoStatus ?? undefined },
+        client,
+        couponVeh,
+        inspection,
+      );
+      if (draft) {
+        coupon = await insertCoupon(tx, {
+          ...draft,
+          rentalId: rental.id,
+          emitidoPor: usuario,
+        });
+      }
     }
   });
+  return { coupon };
 }
 
-export async function insertTransferService(input: Omit<TransferService, "id">) {
+export async function insertTransferService(
+  input: Omit<TransferService, "id">,
+  usuario: string,
+) {
   const id = randomUUID();
   const [vehicle] = await db
     .select({
       id: vehicles.id,
       modelo: vehicles.modelo,
       placa: vehicles.placa,
+      ano: vehicles.ano,
+      categoria: vehicles.categoria,
       disponivel: vehicles.disponivel,
       oculto: vehicles.oculto,
     })
@@ -811,33 +991,51 @@ export async function insertTransferService(input: Omit<TransferService, "id">) 
 
   const tipoLabel = TRANSFER_SERVICE_TYPE_LABELS[input.tipoServico] ?? input.tipoServico;
   const snap = await snapshotUsd(input.valor, input.moeda);
-
+  const service: TransferService = {
+    id,
+    veiculoId: input.veiculoId,
+    tipoServico: input.tipoServico,
+    destino: input.destino.trim(),
+    data: input.data,
+    valor: input.valor,
+    moeda: input.moeda,
+    clienteNome: input.clienteNome?.trim() || undefined,
+    obs: input.obs?.trim() || undefined,
+  };
+  let coupon: Coupon | undefined;
   await db.transaction(async (tx) => {
     await tx.insert(transferServices).values({
       id,
-      veiculoId: input.veiculoId,
-      tipoServico: input.tipoServico,
-      destino: input.destino.trim(),
-      data: input.data,
-      valor: input.valor,
-      moeda: input.moeda,
-      clienteNome: input.clienteNome?.trim() || null,
-      obs: input.obs?.trim() || null,
+      veiculoId: service.veiculoId,
+      tipoServico: service.tipoServico,
+      destino: service.destino,
+      data: service.data,
+      valor: service.valor,
+      moeda: service.moeda,
+      clienteNome: service.clienteNome ?? null,
+      obs: service.obs ?? null,
     });
     await tx.insert(financeEntries).values({
       id: randomUUID(),
-      data: input.data,
-      descricao: `Serviço avulso — ${tipoLabel} → ${input.destino.trim()} — ${vehicle.placa}`,
-      valor: input.valor,
-      moeda: input.moeda,
+      data: service.data,
+      descricao: `Serviço avulso — ${tipoLabel} → ${service.destino} — ${vehicle.placa}`,
+      valor: service.valor,
+      moeda: service.moeda,
       tipo: "entrada",
       categoria: "translato",
       manual: false,
-      veiculoId: input.veiculoId,
+      veiculoId: service.veiculoId,
       ...usdColumns(snap),
     });
+    const draft = buildTranslatoCouponDraft(service, couponVehicle(vehicle));
+    coupon = await insertCoupon(tx, {
+      ...draft,
+      transferServiceId: id,
+      emitidoPor: usuario,
+    });
   });
-  return id;
+  if (!coupon) throw new Error("Falha ao emitir cupom");
+  return { id, coupon };
 }
 
 async function findLinkedTranslatoFinance(
@@ -1039,6 +1237,7 @@ export async function renewRental(input: RenewRentalInput) {
   const historico = [...(rental.renovacoes ?? []), renewal];
   const nextSaida = input.prazoIndeterminado ? rental.dataSaida : (input.dataSaida as string);
 
+  let coupon: Coupon | null = null;
   await db.transaction(async (tx) => {
     await tx
       .update(rentals)
@@ -1068,10 +1267,29 @@ export async function renewRental(input: RenewRentalInput) {
         veiculoId: rental.veiculoId,
         ...usdColumns(financeSnap),
       });
+      const { vehicle: couponVeh, client } = await loadCouponParties(tx, rental);
+      const draft = buildRenewalCouponDraft(
+        couponRental({
+          ...rental,
+          dataSaida: nextSaida,
+          prazoIndeterminado: input.prazoIndeterminado,
+          renovacoes: historico,
+        }),
+        client,
+        couponVeh,
+        renewal,
+      );
+      if (draft) {
+        coupon = await insertCoupon(tx, {
+          ...draft,
+          rentalId: rental.id,
+          emitidoPor: input.usuario ?? "sistema",
+        });
+      }
     }
   });
 
-  return { id: input.id, ...renewal };
+  return { id: input.id, ...renewal, coupon };
 }
 
 export async function insertActivityLog(input: Omit<ActivityLog, "id" | "quando">) {

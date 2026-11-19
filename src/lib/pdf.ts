@@ -1,6 +1,6 @@
 // Client-side PDF generation for contracts and pending documents.
 import { jsPDF } from "jspdf";
-import type { Client, Rental, Vehicle } from "./data-store";
+import { COUPON_KIND_LABELS, type Client, type Coupon, type Rental, type Vehicle } from "./data-store";
 import { fmtMoney } from "./data-store";
 
 type Lang = "pt" | "nl";
@@ -253,6 +253,184 @@ export async function generateContractPDF(
   );
 
   doc.save(`contrato-${vehicle?.placa ?? rental.id}.pdf`);
+}
+
+function yn(value: boolean) {
+  return value ? "Sim / Ja" : "Não / Nee";
+}
+
+function couponEnsurePage(doc: jsPDF, y: number, needed = 16) {
+  if (y + needed < 280) return y;
+  doc.addPage();
+  return 20;
+}
+
+export function generateCouponPDF(coupon: Coupon, lang: Lang = "pt") {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const p = coupon.payload;
+  const kind = COUPON_KIND_LABELS[coupon.tipo];
+  const locale = lang === "pt" ? "pt-BR" : "nl-NL";
+
+  doc.setFillColor(20, 20, 20);
+  doc.rect(0, 0, 210, 22, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text("CUPOM / BON", 15, 10);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(`${coupon.codigo}  ·  ${kind.pt} / ${kind.nl}`, 15, 16);
+  doc.setTextColor(0, 0, 0);
+
+  let y = 30;
+  y = section(doc, y, "EMPRESA / BEDRIJF");
+  y = kv(doc, y, "Nome / Naam", COMPANY);
+  y = kv(doc, y, "Endereço / Adres", COMPANY_ADDRESS);
+  y = kv(doc, y, "KKF", COMPANY_KKF);
+  y = kv(doc, y, "Emitido / Uitgegeven", new Date(coupon.createdAt.replace(" ", "T")).toLocaleString(locale));
+  y = kv(doc, y, "Atendente / Medewerker", coupon.emitidoPor);
+  if (p.locacaoRef) y = kv(doc, y, "Locação / Verhuur", p.locacaoRef);
+
+  if (p.cliente) {
+    y = couponEnsurePage(doc, y, 28);
+    y = section(doc, y, "CLIENTE / KLANT");
+    y = kv(doc, y, "Nome / Naam", p.cliente.nome || "—");
+    if (p.cliente.rg || p.cliente.cpf) {
+      y = kv(doc, y, "Documento / ID", `${p.cliente.rg || "—"} / ${p.cliente.cpf || "—"}`);
+    }
+    if (p.cliente.endereco) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("Endereço / Adres", 17, y);
+      doc.setFont("helvetica", "normal");
+      const addr = doc.splitTextToSize(p.cliente.endereco, 128) as string[];
+      doc.text(addr, 60, y);
+      y += Math.max(5, addr.length * 4);
+    }
+    if (p.cliente.whatsapp) y = kv(doc, y, "WhatsApp", p.cliente.whatsapp);
+    if (p.cliente.email) y = kv(doc, y, "E-mail", p.cliente.email);
+  }
+
+  if (p.veiculo) {
+    y = couponEnsurePage(doc, y, 22);
+    y = section(doc, y, "VEÍCULO / VOERTUIG");
+    y = kv(
+      doc,
+      y,
+      "Modelo / Model",
+      `${p.veiculo.modelo} · ${p.veiculo.placa}${p.veiculo.ano ? ` · ${p.veiculo.ano}` : ""}`,
+    );
+    y = kv(doc, y, "Categoria / Categorie", p.veiculo.categoria);
+  }
+
+  if (p.periodo) {
+    y = couponEnsurePage(doc, y, 24);
+    y = section(doc, y, "PERÍODO / PERIODE");
+    y = kv(doc, y, "Início / Start", formatDate(p.periodo.retirada));
+    y = kv(
+      doc,
+      y,
+      "Fim / Einde",
+      p.periodo.indeterminado ? "Indeterminado / Onbepaald" : formatDate(p.periodo.saida),
+    );
+    y = kv(doc, y, "Dias / Dagen", String(p.periodo.dias));
+  }
+
+  if (p.translato) {
+    y = couponEnsurePage(doc, y, 22);
+    y = section(doc, y, "TRANSLATO");
+    y = kv(doc, y, "Tipo / Type", p.translato.tipoServico);
+    y = kv(doc, y, "Destino / Bestemming", p.translato.destino);
+    y = kv(doc, y, "Data / Datum", formatDate(p.translato.data));
+  }
+
+  if (p.vistoria) {
+    y = couponEnsurePage(doc, y, 32);
+    y = section(doc, y, "VISTORIA / INSPECTIE");
+    y = kv(doc, y, "Tanque cheio / Volle tank", yn(p.vistoria.tanque));
+    y = kv(doc, y, "Limpo / Schoon", yn(p.vistoria.limpo));
+    y = kv(doc, y, "Sem avarias / Geen schade", yn(p.vistoria.semAvarias));
+    if (p.vistoria.km != null) {
+      y = kv(doc, y, "Km saída / Km start", p.vistoria.km.toLocaleString(locale));
+    }
+    if (p.vistoria.kmVolta != null) {
+      y = kv(doc, y, "Km volta / Km retour", p.vistoria.kmVolta.toLocaleString(locale));
+    }
+    if (p.vistoria.kmRodados != null) {
+      y = kv(doc, y, "Km rodados / Gereden", p.vistoria.kmRodados.toLocaleString(locale));
+    }
+    if (p.vistoria.obs) y = kv(doc, y, "Obs.", p.vistoria.obs);
+  }
+
+  y = couponEnsurePage(doc, y, 20 + p.itens.length * 8);
+  y = section(doc, y, "ITENS / POSTEN");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text(lang === "pt" ? "Descrição" : "Omschrijving", 17, y);
+  doc.text("Qtd", 130, y);
+  doc.text("Unit.", 148, y);
+  doc.text("Total", 178, y, { align: "right" });
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  for (const item of p.itens) {
+    y = couponEnsurePage(doc, y, 10);
+    const label = lang === "pt" ? item.descricao : item.descricaoNl;
+    const lines = doc.splitTextToSize(label, 108) as string[];
+    doc.text(lines, 17, y);
+    if (item.quantidade != null) doc.text(String(item.quantidade), 130, y);
+    if (item.unitario != null) doc.text(fmtMoney(item.unitario, coupon.moeda), 148, y);
+    doc.text(fmtMoney(item.total, coupon.moeda), 195, y, { align: "right" });
+    y += Math.max(6, lines.length * 4);
+  }
+
+  if (p.caucao) {
+    y = couponEnsurePage(doc, y, 12);
+    doc.setFontSize(8);
+    doc.setTextColor(90);
+    const cauStatus =
+      p.caucao.status === "devolvido" ? "devolvida / vrijgegeven" : "retida / aangehouden";
+    doc.text(
+      `Caução / Borg (não faturada): ${fmtMoney(p.caucao.valor, coupon.moeda)} — ${cauStatus}`,
+      17,
+      y,
+    );
+    doc.setTextColor(0, 0, 0);
+    y += 7;
+  }
+
+  y = couponEnsurePage(doc, y, 22);
+  doc.setFillColor(20, 20, 20);
+  doc.rect(15, y, 180, 12, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("TOTAL", 17, y + 8);
+  doc.text(fmtMoney(coupon.total, coupon.moeda), 193, y + 8, { align: "right" });
+  doc.setTextColor(0, 0, 0);
+  y += 18;
+
+  if (p.observacao) {
+    y = couponEnsurePage(doc, y, 14);
+    y = section(doc, y, "OBSERVAÇÃO / OPMERKING");
+    y = wrap(doc, p.observacao, y, 8);
+  }
+
+  y = couponEnsurePage(doc, y, 18);
+  doc.setFontSize(7.2);
+  doc.setTextColor(90);
+  const footer = p.contratoAssinadoEm
+    ? `Este cupom refere-se ao pagamento do serviço. As regras de uso estão no contrato assinado em ${p.contratoAssinadoEm}. / Deze bon betreft de betaling van de dienst. De gebruiksvoorwaarden staan in het contract ondertekend op ${p.contratoAssinadoEm}.`
+    : "Este cupom refere-se ao pagamento do serviço. As regras de uso estão no contrato de locação. / Deze bon betreft de betaling van de dienst. De gebruiksvoorwaarden staan in het huurcontract.";
+  y = wrap(doc, footer, y, 7.2);
+
+  doc.setFontSize(7);
+  doc.text(`Ref.: ${coupon.id}`, 15, 290);
+  doc.text(`${lang === "pt" ? "Gerado em" : "Gegenereerd op"}: ${new Date().toLocaleString(locale)}`, 195, 290, {
+    align: "right",
+  });
+
+  const slug = (p.veiculo?.placa ?? p.translato?.destino ?? coupon.codigo).replace(/\s+/g, "-");
+  doc.save(`cupom-${coupon.codigo}-${slug}.pdf`);
 }
 
 export function generatePendingDocPDF(label: string, ref: string, lang: Lang = "pt") {

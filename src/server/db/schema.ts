@@ -12,6 +12,8 @@ import {
   varchar,
 } from "drizzle-orm/mysql-core";
 import type {
+  CouponKind,
+  CouponPayload,
   InspectionIn,
   InspectionOut,
   JsonValue,
@@ -207,6 +209,41 @@ export const transferServices = mysqlTable(
     index("transfer_services_veiculo_idx").on(table.veiculoId),
     index("transfer_services_data_idx").on(table.data),
     index("transfer_services_tipo_idx").on(table.tipoServico),
+  ],
+);
+
+export const coupons = mysqlTable(
+  "coupons",
+  {
+    id: id().primaryKey(),
+    numero: int("numero").autoincrement().notNull(),
+    codigo: varchar("codigo", { length: 32 }).notNull(),
+    tipo: mysqlEnum("tipo", ["entrega", "renovacao", "devolucao", "translato"])
+      .$type<CouponKind>()
+      .notNull(),
+    rentalId: varchar("rental_id", { length: 36 }).references(() => rentals.id, {
+      onDelete: "set null",
+      onUpdate: "cascade",
+    }),
+    transferServiceId: varchar("transfer_service_id", { length: 36 }).references(
+      () => transferServices.id,
+      {
+        onDelete: "set null",
+        onUpdate: "cascade",
+      },
+    ),
+    moeda: mysqlEnum("moeda", ["SRD", "USD", "EUR"]).notNull(),
+    total: money("total").notNull(),
+    payload: json("payload").$type<CouponPayload>().notNull(),
+    emitidoPor: varchar("emitido_por", { length: 80 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("coupons_numero_unique").on(table.numero),
+    uniqueIndex("coupons_codigo_unique").on(table.codigo),
+    index("coupons_rental_idx").on(table.rentalId),
+    index("coupons_transfer_idx").on(table.transferServiceId),
+    index("coupons_tipo_idx").on(table.tipo),
   ],
 );
 

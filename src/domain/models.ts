@@ -293,6 +293,86 @@ export interface Rental {
   contratoAssinadoEm?: string;
 }
 
+export type CouponKind = "entrega" | "renovacao" | "devolucao" | "translato";
+
+export const COUPON_KINDS: CouponKind[] = ["entrega", "renovacao", "devolucao", "translato"];
+
+export const COUPON_KIND_LABELS: Record<CouponKind, { pt: string; nl: string }> = {
+  entrega: { pt: "Entrega / aluguel", nl: "Aflevering / huur" },
+  renovacao: { pt: "Renovação", nl: "Verlenging" },
+  devolucao: { pt: "Devolução (extra)", nl: "Retour (extra)" },
+  translato: { pt: "Serviço avulso", nl: "Losse dienst" },
+};
+
+export interface CouponLine {
+  descricao: string;
+  descricaoNl: string;
+  quantidade?: number;
+  unitario?: number;
+  total: number;
+}
+
+export interface CouponPayload {
+  tipo: CouponKind;
+  cliente?: {
+    nome: string;
+    rg: string;
+    cpf: string;
+    endereco: string;
+    whatsapp: string;
+    email?: string;
+    suriname?: boolean;
+  };
+  veiculo?: {
+    modelo: string;
+    placa: string;
+    ano?: number;
+    categoria: string;
+  };
+  periodo?: {
+    retirada: string;
+    saida: string;
+    indeterminado: boolean;
+    dias: number;
+  };
+  vistoria?: {
+    tanque: boolean;
+    limpo: boolean;
+    semAvarias: boolean;
+    obs: string;
+    km?: number;
+    kmVolta?: number;
+    kmRodados?: number;
+  };
+  itens: CouponLine[];
+  caucao?: {
+    valor: number;
+    status: "retido" | "devolvido";
+  };
+  observacao?: string;
+  contratoAssinadoEm?: string;
+  locacaoRef?: string;
+  translato?: {
+    tipoServico: string;
+    destino: string;
+    data: string;
+  };
+}
+
+export interface Coupon {
+  id: string;
+  numero: number;
+  codigo: string;
+  tipo: CouponKind;
+  rentalId?: string;
+  transferServiceId?: string;
+  moeda: Currency;
+  total: number;
+  payload: CouponPayload;
+  emitidoPor: string;
+  createdAt: string;
+}
+
 export interface Maintenance {
   id: string;
   veiculoId: string;
@@ -479,6 +559,7 @@ export interface Store {
   clients: Client[];
   rentals: Rental[];
   transferServices: TransferService[];
+  coupons: Coupon[];
   maintenance: Maintenance[];
   finance: FinanceEntry[];
   users: UserAccount[];
@@ -491,6 +572,7 @@ export const emptyStore: Store = {
   clients: [],
   rentals: [],
   transferServices: [],
+  coupons: [],
   maintenance: [],
   finance: [],
   users: [],
