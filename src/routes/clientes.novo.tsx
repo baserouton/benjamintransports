@@ -2,16 +2,17 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { DocumentPhoto, fileToUploadDataUrl } from "@/components/document-photo";
 import { useI18n } from "@/lib/i18n";
 import { notifyStoreChanged } from "@/lib/data-store";
-import { createClientFn } from "@/server/functions/store.functions";
+import { createClientFn, uploadVehiclePhotosFn } from "@/server/functions/store.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Upload } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/clientes/novo")({
   head: () => ({
@@ -25,9 +26,12 @@ export const Route = createFileRoute("/clientes/novo")({
   component: NewClient,
 });
 
+type DocFile = { file: File; preview: string };
+
 function NewClient() {
   const { t } = useI18n();
   const nav = useNavigate();
+  const [saving, setSaving] = useState(false);
   const [f, setF] = useState({
     nome: "",
     rg: "",
@@ -36,14 +40,40 @@ function NewClient() {
     whatsapp: "",
     email: "",
     suriname: false,
-    cnhUrl: "",
-    passaporteUrl: "",
-    identiteitskaartUrl: "",
   });
+  const [cnh, setCnh] = useState<DocFile | null>(null);
+  const [passaporte, setPassaporte] = useState<DocFile | null>(null);
+  const [identiteit, setIdentiteit] = useState<DocFile | null>(null);
+
+  const setDoc = (
+    current: DocFile | null,
+    setter: (next: DocFile | null) => void,
+    file: File | null,
+  ) => {
+    if (current) URL.revokeObjectURL(current.preview);
+    setter(file ? { file, preview: URL.createObjectURL(file) } : null);
+  };
+
+  const uploadDoc = async (doc: DocFile | null) => {
+    if (!doc) return undefined;
+    const image = await fileToUploadDataUrl(doc.file);
+    const uploaded = await uploadVehiclePhotosFn({ data: { images: [image] } });
+    return uploaded.urls[0];
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!f.nome.trim()) {
+      toast.error("Informe o nome do cliente.");
+      return;
+    }
+    setSaving(true);
     try {
+      const [cnhUrl, passaporteUrl, identiteitskaartUrl] = await Promise.all([
+        uploadDoc(cnh),
+        f.suriname ? uploadDoc(passaporte) : Promise.resolve(undefined),
+        f.suriname ? uploadDoc(identiteit) : Promise.resolve(undefined),
+      ]);
       await createClientFn({
         data: {
           nome: f.nome,
@@ -53,18 +83,20 @@ function NewClient() {
           whatsapp: f.whatsapp,
           email: f.email || undefined,
           suriname: f.suriname,
+          cnhUrl,
+          passaporteUrl,
+          identiteitskaartUrl,
         },
       });
       notifyStoreChanged();
       toast.success(t("saved"));
       nav({ to: "/clientes" });
-    } catch {
-      toast.error("Não foi possível salvar o cliente");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o cliente");
+    } finally {
+      setSaving(false);
     }
   };
-
-  const fileToUrl = (files: FileList | null) =>
-    files && files[0] ? URL.createObjectURL(files[0]) : "";
 
   return (
     <div>
@@ -78,7 +110,7 @@ function NewClient() {
       />
       <Card className="max-w-3xl">
         <CardContent className="pt-6">
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={(e) => void submit(e)} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>{t("name")}</Label>
@@ -126,22 +158,28 @@ function NewClient() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
-              <FileField
+              <DocumentPhoto
                 label={t("cnh")}
-                onFile={(files) => setF({ ...f, cnhUrl: fileToUrl(files) })}
-                preview={f.cnhUrl}
+                url={cnh?.preview}
+                hint={t("addDocumentPhoto")}
+                onFile={(file) => setDoc(cnh, setCnh, file)}
+                onRemove={cnh ? () => setDoc(cnh, setCnh, null) : undefined}
               />
               {f.suriname && (
                 <>
-                  <FileField
+                  <DocumentPhoto
                     label={t("passport")}
-                    onFile={(files) => setF({ ...f, passaporteUrl: fileToUrl(files) })}
-                    preview={f.passaporteUrl}
+                    url={passaporte?.preview}
+                    hint={t("addDocumentPhoto")}
+                    onFile={(file) => setDoc(passaporte, setPassaporte, file)}
+                    onRemove={passaporte ? () => setDoc(passaporte, setPassaporte, null) : undefined}
                   />
-                  <FileField
+                  <DocumentPhoto
                     label={t("identiteitskaart")}
-                    onFile={(files) => setF({ ...f, identiteitskaartUrl: fileToUrl(files) })}
-                    preview={f.identiteitskaartUrl}
+                    url={identiteit?.preview}
+                    hint={t("addDocumentPhoto")}
+                    onFile={(file) => setDoc(identiteit, setIdentiteit, file)}
+                    onRemove={identiteit ? () => setDoc(identiteit, setIdentiteit, null) : undefined}
                   />
                 </>
               )}
@@ -151,38 +189,13 @@ function NewClient() {
               <Button type="button" variant="outline" onClick={() => nav({ to: "/clientes" })}>
                 {t("cancel")}
               </Button>
-              <Button type="submit">{t("save")}</Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Salvando…" : t("save")}
+              </Button>
             </div>
           </form>
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function FileField({
-  label,
-  onFile,
-  preview,
-}: {
-  label: string;
-  onFile: (files: FileList | null) => void;
-  preview?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <label className="flex flex-col items-center gap-1 rounded-md border-2 border-dashed border-border p-3 cursor-pointer hover:bg-muted/40 text-xs">
-        {preview ? (
-          <img src={preview} alt="" className="h-16 object-contain" />
-        ) : (
-          <>
-            <Upload className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">Enviar</span>
-          </>
-        )}
-        <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => onFile(e.target.files)} />
-      </label>
     </div>
   );
 }

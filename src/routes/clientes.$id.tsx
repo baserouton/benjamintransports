@@ -2,9 +2,10 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { DocumentPhoto, fileToUploadDataUrl } from "@/components/document-photo";
 import { useI18n } from "@/lib/i18n";
 import { notifyStoreChanged, useStore } from "@/lib/data-store";
-import { updateClientFn } from "@/server/functions/store.functions";
+import { updateClientFn, uploadVehiclePhotosFn } from "@/server/functions/store.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, FileText, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
+import type { Client } from "@/lib/data-store";
 
 export const Route = createFileRoute("/clientes/$id")({
   head: () => ({
@@ -34,6 +36,9 @@ function ClientDetail() {
   const c = s.clients.find((x) => x.id === id);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [docBusy, setDocBusy] = useState<"cnhUrl" | "passaporteUrl" | "identiteitskaartUrl" | null>(
+    null,
+  );
   const [form, setForm] = useState({
     nome: "",
     rg: "",
@@ -91,6 +96,26 @@ function ClientDetail() {
 
   const rentals = s.rentals.filter((r) => r.clienteId === c.id);
 
+  const saveDocument = async (client: Client, field: DocField, file: File | null) => {
+    setDocBusy(field);
+    try {
+      let nextUrl: string | undefined;
+      if (file) {
+        const image = await fileToUploadDataUrl(file);
+        const uploaded = await uploadVehiclePhotosFn({ data: { images: [image] } });
+        nextUrl = uploaded.urls[0];
+        if (!nextUrl) throw new Error("Falha no envio da foto");
+      }
+      await persistClientDocs(client, { [field]: nextUrl ?? "" });
+      notifyStoreChanged();
+      toast.success(file ? t("saved") : t("deleted"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o documento");
+    } finally {
+      setDocBusy(null);
+    }
+  };
+
   const saveEdit = async () => {
     if (!form.nome.trim()) {
       toast.error("Informe o nome do cliente.");
@@ -108,9 +133,9 @@ function ClientDetail() {
           whatsapp: form.whatsapp.trim(),
           email: form.email.trim() || undefined,
           suriname: form.suriname,
-          cnhUrl: form.cnhUrl.trim() || undefined,
-          passaporteUrl: form.passaporteUrl.trim() || undefined,
-          identiteitskaartUrl: form.identiteitskaartUrl.trim() || undefined,
+          cnhUrl: c.cnhUrl,
+          passaporteUrl: c.passaporteUrl,
+          identiteitskaartUrl: c.identiteitskaartUrl,
         },
       });
       notifyStoreChanged();
@@ -275,12 +300,37 @@ function ClientDetail() {
           <CardHeader>
             <CardTitle className="text-base">Documentos</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Doc label={t("cnh")} url={c.cnhUrl} />
-            {c.suriname && (
+          <CardContent className="space-y-4">
+            <DocumentPhoto
+              label={t("cnh")}
+              url={c.cnhUrl}
+              hint={t("addDocumentPhoto")}
+              busy={docBusy === "cnhUrl"}
+              onFile={(file) => void saveDocument(c, "cnhUrl", file)}
+              onRemove={c.cnhUrl ? () => void saveDocument(c, "cnhUrl", null) : undefined}
+            />
+            {(c.suriname || form.suriname) && (
               <>
-                <Doc label={t("passport")} url={c.passaporteUrl} />
-                <Doc label={t("identiteitskaart")} url={c.identiteitskaartUrl} />
+                <DocumentPhoto
+                  label={t("passport")}
+                  url={c.passaporteUrl}
+                  hint={t("addDocumentPhoto")}
+                  busy={docBusy === "passaporteUrl"}
+                  onFile={(file) => void saveDocument(c, "passaporteUrl", file)}
+                  onRemove={c.passaporteUrl ? () => void saveDocument(c, "passaporteUrl", null) : undefined}
+                />
+                <DocumentPhoto
+                  label={t("identiteitskaart")}
+                  url={c.identiteitskaartUrl}
+                  hint={t("addDocumentPhoto")}
+                  busy={docBusy === "identiteitskaartUrl"}
+                  onFile={(file) => void saveDocument(c, "identiteitskaartUrl", file)}
+                  onRemove={
+                    c.identiteitskaartUrl
+                      ? () => void saveDocument(c, "identiteitskaartUrl", null)
+                      : undefined
+                  }
+                />
               </>
             )}
           </CardContent>
@@ -325,20 +375,25 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
-function Doc({ label, url }: { label: string; url?: string }) {
-  return (
-    <div className="flex items-center justify-between rounded-md border border-border p-2">
-      <span className="flex items-center gap-2 text-xs">
-        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-        {label}
-      </span>
-      {url ? (
-        <a href={url} target="_blank" rel="noreferrer" className="text-xs underline">
-          Ver
-        </a>
-      ) : (
-        <span className="text-xs text-muted-foreground">—</span>
-      )}
-    </div>
-  );
+type DocField = "cnhUrl" | "passaporteUrl" | "identiteitskaartUrl";
+
+async function persistClientDocs(client: Client, patch: Partial<Pick<Client, DocField>>) {
+  await updateClientFn({
+    data: {
+      id: client.id,
+      nome: client.nome,
+      rg: client.rg,
+      cpf: client.cpf,
+      endereco: client.endereco,
+      whatsapp: client.whatsapp,
+      email: client.email,
+      suriname: client.suriname,
+      cnhUrl: "cnhUrl" in patch ? patch.cnhUrl || undefined : client.cnhUrl,
+      passaporteUrl: "passaporteUrl" in patch ? patch.passaporteUrl || undefined : client.passaporteUrl,
+      identiteitskaartUrl:
+        "identiteitskaartUrl" in patch
+          ? patch.identiteitskaartUrl || undefined
+          : client.identiteitskaartUrl,
+    },
+  });
 }
